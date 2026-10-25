@@ -1,0 +1,110 @@
+/*
+ * Vaidyora design tokens — single source of truth.
+ * Tailwind theme values (tailwind.config.ts) map onto these variables.
+ */
+:root {
+  /* Brand palette */
+  --color-forest: #31583f;
+  --color-forest-hover: #2a4c36;
+  --color-forest-deep: #233a2c;
+  --color-sage: #e7eee4;
+  --color-sage-strong: #d3dfcf;
+  --color-gold: #e5d1a0;
+  --color-gold-soft: #f4ecd6;
+  /* Darkened gold for text/icons on light surfaces (AA on white: 5.0:1) */
+  --color-gold-ink: #7a5d1a;
+  --color-ivory: #f7f5ef;
+  --color-surface: #ffffff;
+
+  /* Text — #29332D on white 12.6:1; muted #5f6a60 on white 5.6:1 */
+  --color-text: #29332d;
+  --color-text-muted: #5f6a60;
+  /* Brand secondary #7D877D (3.7:1) is reserved for large/non-essential text */
+  --color-text-subtle: #7d877d;
+  --color-text-inverse: #ffffff;
+
+  --color-border: #e4e7df;
+  --color-border-strong: #c9cfc3;
+
+  /* Status (each foreground ≥ 4.5:1 on its soft background) */
+  --color-danger: #b42318;
+  --color-danger-soft: #fdecea;
+  --color-warning: #8a5300;
+  --color-warning-soft: #fdf3e1;
+  --color-success: #1e6b3a;
+  --color-success-soft: #e5f3e9;
+  --color-info: #1f5fa8;
+  --color-info-soft: #e6eff9;
+
+  /* Typography */
+  --font-display: 'Manrope', 'Noto Sans Devanagari', ui-sans-serif, system-ui, sans-serif;
+  --font-body: 'DM Sans', 'Noto Sans Devanagari', ui-sans-serif, system-ui, sans-serif;
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 0.9375rem;
+  --text-lg: 1.0625rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+
+  /* Spacing scale (Tailwind's 4px scale is used for utilities; these drive layout) */
+  --space-page-x: 1rem;
+  --space-page-y: 1.5rem;
+  --space-section: 2rem;
+
+  /* Layout */
+  --layout-sidebar: 16rem;
+  --layout-sidebar-collapsed: 4.5rem;
+  --layout-header: 3.75rem;
+  --layout-content-max: 80rem;
+  --layout-form-max: 48rem;
+  --layout-prose-max: 65ch;
+
+  /* Radii */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+
+  /* Shadows — deliberately soft and sparse */
+  --shadow-xs: 0 1px 1px rgb(35 58 44 / 0.04);
+  --shadow-sm: 0 1px 2px rgb(35 58 44 / 0.06), 0 1px 1px rgb(35 58 44 / 0.04);
+  --shadow-md: 0 4px 12px rgb(35 58 44 / 0.08);
+  --shadow-lg: 0 12px 32px rgb(35 58 44 / 0.14);
+
+  /* Focus */
+  --focus-ring: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-forest);
+
+  /* Z-index */
+  --z-dropdown: 30;
+  --z-sticky: 40;
+  --z-drawer: 50;
+  --z-modal: 60;
+  --z-toast: 70;
+  --z-tooltip: 80;
+
+  /* Motion */
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+}
+
+@media (min-width: 768px) {
+  :root {
+    --space-page-x: 1.5rem;
+    --space-page-y: 2rem;
+  }
+}
+
+@media (min-width: 1280px) {
+  :root {
+    --space-page-x: 2rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0ms;
+    --duration-base: 0ms;
+  }
+}
