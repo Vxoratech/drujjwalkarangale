@@ -1,6 +1,6 @@
 import { getSupabase } from '@/lib/supabase/client';
 import { isPermission, type Permission } from '@/lib/permissions/permissions';
-import type { AppRole, Branch, Clinic, Membership, Profile, StaffMember, UUID } from '@/types/domain';
+import type { AccessReview, ClinicSettings, AppRole, Branch, Clinic, Membership, Profile, StaffMember, UUID } from '@/types/domain';
 import { unwrap } from './_helpers';
 
 export async function fetchMemberships(userId: UUID): Promise<Membership[]> {
@@ -136,4 +136,28 @@ export async function fetchProfileNames(ids: UUID[]): Promise<Map<UUID, string>>
   if (ids.length === 0) return new Map();
   const rows = unwrap<{ id: UUID; full_name: string }[]>(await getSupabase().from('profiles').select('id, full_name').in('id', [...new Set(ids)]));
   return new Map(rows.map((r) => [r.id, r.full_name]));
+}
+
+export async function updateClinicSettings(clinicId: UUID, settings: ClinicSettings): Promise<Clinic> {
+  return unwrap<Clinic>(await getSupabase().from('clinics').update({ settings }).eq('id', clinicId).select('*').single());
+}
+
+export async function listAccessReviews(clinicId: UUID): Promise<AccessReview[]> {
+  return unwrap<AccessReview[]>(await getSupabase().from('access_reviews').select('*').eq('clinic_id', clinicId).order('reviewed_at', { ascending: false }).limit(10));
+}
+
+export async function recordAccessReview(clinicId: UUID, input: { memberCount: number; changesMade: boolean; notes: string | null }): Promise<void> {
+  unwrap(
+    await getSupabase()
+      .from('access_reviews')
+      .insert({ clinic_id: clinicId, member_count: input.memberCount, changes_made: input.changesMade, notes: input.notes })
+      .select('id')
+      .single(),
+  );
+}
+
+/** Last recorded activity per member (from audit events), for access reviews. */
+export async function fetchMemberActivity(clinicId: UUID): Promise<Map<UUID, { last_activity_at: string | null; last_session_at: string | null }>> {
+  const rows = unwrap<{ user_id: UUID; last_activity_at: string | null; last_session_at: string | null }[]>(await getSupabase().rpc('member_last_activity', { p_clinic: clinicId }));
+  return new Map(rows.map((r) => [r.user_id, r]));
 }

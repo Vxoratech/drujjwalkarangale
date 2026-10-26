@@ -73,7 +73,7 @@ export function UploadDocumentDialog({
         <FormField label={t('documents.category')}>
           <Select value={category} onChange={(e) => setCategory(e.target.value as DocumentCategory)} options={DOCUMENT_CATEGORIES.map((c) => ({ value: c, label: t(`documentCategory.${c}`) }))} />
         </FormField>
-        <FileUpload label={t('documents.file')} value={file} onChange={setFile} hint="PDF, PNG, JPG, WebP · max 10 MB" />
+        <FileUpload label={t('documents.file')} value={file} onChange={setFile} />
       </div>
     </Modal>
   );

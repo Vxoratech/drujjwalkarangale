@@ -2,6 +2,7 @@ import * as RadixDialog from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { cn } from '@/lib/cn';
+import { useI18n } from '@/locales/i18n';
 import { Button } from './Button';
 
 const overlay = 'fixed inset-0 z-modal bg-forest-deep/40 data-[state=open]:animate-[fade-in_150ms_ease-out]';
@@ -19,7 +20,8 @@ export interface ModalProps {
 
 const modalSizes = { sm: 'max-w-md', md: 'max-w-xl', lg: 'max-w-3xl' } as const;
 
-export function Modal({ open, onOpenChange, title, description, children, footer, size = 'md', closeLabel = 'Close' }: ModalProps) {
+export function Modal({ open, onOpenChange, title, description, children, footer, size = 'md', closeLabel }: ModalProps) {
+  const { t } = useI18n();
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
       <RadixDialog.Portal>
@@ -37,7 +39,7 @@ export function Modal({ open, onOpenChange, title, description, children, footer
               <RadixDialog.Title className="font-display text-lg font-semibold">{title}</RadixDialog.Title>
               {description && <RadixDialog.Description className="mt-1 text-sm text-ink-muted">{description}</RadixDialog.Description>}
             </div>
-            <RadixDialog.Close className="-mr-1 rounded p-1 text-ink-muted hover:bg-sage hover:text-ink" aria-label={closeLabel}>
+            <RadixDialog.Close className="-mr-1 rounded p-1 text-ink-muted hover:bg-sage hover:text-ink" aria-label={closeLabel ?? t('common.close')}>
               <X className="size-5" aria-hidden />
             </RadixDialog.Close>
           </div>
@@ -63,7 +65,8 @@ export interface ConfirmDialogProps {
   confirmDisabled?: boolean;
 }
 
-export function ConfirmDialog({ open, onOpenChange, title, body, confirmLabel, cancelLabel = 'Cancel', tone = 'primary', onConfirm, children, confirmDisabled }: ConfirmDialogProps) {
+export function ConfirmDialog({ open, onOpenChange, title, body, confirmLabel, cancelLabel, tone = 'primary', onConfirm, children, confirmDisabled }: ConfirmDialogProps) {
+  const { t } = useI18n();
   const [busy, setBusy] = useState(false);
   async function handleConfirm() {
     setBusy(true);
@@ -85,7 +88,7 @@ export function ConfirmDialog({ open, onOpenChange, title, body, confirmLabel, c
       footer={
         <>
           <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={busy}>
-            {cancelLabel}
+            {cancelLabel ?? t('common.cancel')}
           </Button>
           <Button variant={tone === 'danger' ? 'danger' : 'primary'} onClick={handleConfirm} loading={busy} disabled={confirmDisabled}>
             {confirmLabel}
@@ -106,7 +109,8 @@ export interface DrawerProps extends Omit<ModalProps, 'size'> {
   width?: 'md' | 'lg';
 }
 
-export function Drawer({ open, onOpenChange, title, description, children, footer, side = 'right', width = 'md', closeLabel = 'Close' }: DrawerProps) {
+export function Drawer({ open, onOpenChange, title, description, children, footer, side = 'right', width = 'md', closeLabel }: DrawerProps) {
+  const { t } = useI18n();
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
       <RadixDialog.Portal>
@@ -125,7 +129,7 @@ export function Drawer({ open, onOpenChange, title, description, children, foote
               <RadixDialog.Title className="font-display text-lg font-semibold">{title}</RadixDialog.Title>
               {description && <RadixDialog.Description className="mt-1 text-sm text-ink-muted">{description}</RadixDialog.Description>}
             </div>
-            <RadixDialog.Close className="-mr-1 rounded p-1 text-ink-muted hover:bg-sage hover:text-ink" aria-label={closeLabel}>
+            <RadixDialog.Close className="-mr-1 rounded p-1 text-ink-muted hover:bg-sage hover:text-ink" aria-label={closeLabel ?? t('common.close')}>
               <X className="size-5" aria-hidden />
             </RadixDialog.Close>
           </div>

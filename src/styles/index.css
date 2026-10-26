@@ -56,3 +56,30 @@
   from { opacity: 0; }
   to { opacity: 1; }
 }
+
+/* Print: keep clinical rows and sections whole across A4 pages. */
+@media print {
+  table {
+    page-break-inside: auto;
+  }
+  thead {
+    display: table-header-group;
+  }
+  tr,
+  li,
+  dl > div,
+  section,
+  footer {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  article {
+    overflow: visible !important;
+  }
+  p,
+  td {
+    overflow-wrap: anywhere;
+    orphans: 3;
+    widows: 3;
+  }
+}

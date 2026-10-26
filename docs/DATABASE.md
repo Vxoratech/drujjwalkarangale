@@ -16,11 +16,11 @@
 
 - **Platform:** [`platform_admins`](#platform_admins), [`subscription_plans`](#subscription_plans), [`tenant_subscriptions`](#tenant_subscriptions)
 - **Tenancy:** [`branches`](#branches), [`clinics`](#clinics)
-- **Identity:** [`clinic_members`](#clinic_members), [`member_branches`](#member_branches), [`profiles`](#profiles)
+- **Identity:** [`access_reviews`](#access_reviews), [`clinic_members`](#clinic_members), [`member_branches`](#member_branches), [`profiles`](#profiles)
 - **Authorization:** [`permissions`](#permissions), [`role_permissions`](#role_permissions)
 - **Patients:** [`patient_consents`](#patient_consents), [`patient_documents`](#patient_documents), [`patients`](#patients)
 - **Scheduling:** [`appointments`](#appointments), [`follow_ups`](#follow_ups)
-- **Clinical:** [`ayurvedic_examinations`](#ayurvedic_examinations), [`consultations`](#consultations), [`exam_field_definitions`](#exam_field_definitions), [`investigations`](#investigations), [`prescription_items`](#prescription_items), [`prescription_revisions`](#prescription_revisions), [`prescription_templates`](#prescription_templates), [`prescriptions`](#prescriptions)
+- **Clinical:** [`ayurvedic_examinations`](#ayurvedic_examinations), [`consultation_amendments`](#consultation_amendments), [`consultations`](#consultations), [`exam_field_definitions`](#exam_field_definitions), [`investigations`](#investigations), [`prescription_items`](#prescription_items), [`prescription_revisions`](#prescription_revisions), [`prescription_templates`](#prescription_templates), [`prescriptions`](#prescriptions)
 - **Billing:** [`invoice_items`](#invoice_items), [`invoices`](#invoices), [`payments`](#payments), [`refunds`](#refunds)
 - **Audit:** [`audit_events`](#audit_events)
 - **Cross-cutting:** [`notifications`](#notifications)
@@ -329,7 +329,7 @@
 
 </details>
 
-**Triggers.** `clinics_audit`, `clinics_protect_platform_fields`, `clinics_updated_at`, `clinics_updated_by`, `clinics_validate_timezone`
+**Triggers.** `clinics_audit`, `clinics_protect_platform_fields`, `clinics_updated_at`, `clinics_updated_by`, `clinics_validate_settings`, `clinics_validate_timezone`
 
 **Row Level Security** (role `authenticated`; `anon` has no access).
 
@@ -341,6 +341,56 @@
 | DELETE | — | Not granted to `authenticated` (only via RPC/trusted code) |
 
 ## Identity
+
+### `access_reviews`
+
+**Purpose.** Record of periodic access reviews (who reviewed the roster, when, and whether changes were made).
+
+**Tenant scope.** Tenant-owned: `clinic_id` (immutable, composite FKs to parents).
+
+**Retention and deletion.** Append-only; kept with the audit trail.
+
+<details><summary>Fields</summary>
+
+| Column | Type | Null | Default |
+| --- | --- | --- | --- |
+| `id` | uuid | no | gen_random_uuid() |
+| `clinic_id` | uuid | no |  |
+| `reviewer_id` | uuid | no | auth.uid() |
+| `member_count` | integer | no |  |
+| `changes_made` | boolean | no | false |
+| `notes` | text | yes |  |
+| `reviewed_at` | timestamp with time zone | no | now() |
+
+</details>
+
+<details><summary>Constraints and relationships</summary>
+
+- **Check** `access_reviews_member_count_check`: CHECK ((member_count >= 0))
+- **Check** `access_reviews_notes_check`: CHECK ((char_length(notes) <= 1000))
+- **FK** `access_reviews_clinic_id_fkey`: FOREIGN KEY (clinic_id) REFERENCES clinics(id) ON DELETE CASCADE
+- **FK** `access_reviews_reviewer_id_fkey`: FOREIGN KEY (reviewer_id) REFERENCES auth.users(id)
+- **PK** `access_reviews_pkey`: PRIMARY KEY (id)
+
+</details>
+
+<details><summary>Indexes</summary>
+
+- CREATE INDEX access_reviews_clinic_idx USING btree (clinic_id, reviewed_at DESC)
+- CREATE UNIQUE INDEX access_reviews_pkey USING btree (id)
+
+</details>
+
+**Triggers.** `access_reviews_audit`, `access_reviews_immutable`
+
+**Row Level Security** (role `authenticated`; `anon` has no access).
+
+| Command | Policy | Rule |
+| --- | --- | --- |
+| SELECT | `access_reviews_select` | USING (private.has_permission(clinic_id, 'users.manage'::text) OR private.has_permission(clinic_id, 'audit.read'::text)) |
+| INSERT | `access_reviews_insert` | CHECK ((reviewer_id = auth.uid()) AND private.has_permission(clinic_id, 'users.manage'::text)) |
+| UPDATE | — | Not granted to `authenticated` (only via RPC/trusted code) |
+| DELETE | — | Not granted to `authenticated` (only via RPC/trusted code) |
 
 ### `clinic_members`
 
@@ -1009,6 +1059,10 @@
 | `family_history` | text | yes |  |
 | `custom_fields` | jsonb | no | '{}'::jsonb |
 | `updated_by` | uuid | yes |  |
+| `family_history_maternal` | text | yes |  |
+| `family_history_paternal` | text | yes |  |
+| `family_history_self` | text | yes |  |
+| `menstrual_history` | text | yes |  |
 
 </details>
 
@@ -1022,11 +1076,15 @@
 - **Check** `ayurvedic_examinations_dinacharya_check`: CHECK ((char_length(dinacharya) <= 1000))
 - **Check** `ayurvedic_examinations_drik_check`: CHECK ((char_length(drik) <= 500))
 - **Check** `ayurvedic_examinations_family_history_check`: CHECK ((char_length(family_history) <= 1000))
+- **Check** `ayurvedic_examinations_family_history_maternal_check`: CHECK ((char_length(family_history_maternal) <= 1000))
+- **Check** `ayurvedic_examinations_family_history_paternal_check`: CHECK ((char_length(family_history_paternal) <= 1000))
+- **Check** `ayurvedic_examinations_family_history_self_check`: CHECK ((char_length(family_history_self) <= 1000))
 - **Check** `ayurvedic_examinations_general_examination_check`: CHECK ((char_length(general_examination) <= 2000))
 - **Check** `ayurvedic_examinations_jihva_check`: CHECK ((char_length(jihva) <= 500))
 - **Check** `ayurvedic_examinations_kapha_score_check`: CHECK (((kapha_score >= 0) AND (kapha_score <= 10)))
 - **Check** `ayurvedic_examinations_lifestyle_check`: CHECK ((char_length(lifestyle) <= 1000))
 - **Check** `ayurvedic_examinations_mala_check`: CHECK ((char_length(mala) <= 500))
+- **Check** `ayurvedic_examinations_menstrual_history_check`: CHECK ((char_length(menstrual_history) <= 1000))
 - **Check** `ayurvedic_examinations_mutra_check`: CHECK ((char_length(mutra) <= 500))
 - **Check** `ayurvedic_examinations_nadi_check`: CHECK ((char_length(nadi) <= 500))
 - **Check** `ayurvedic_examinations_nidra_check`: CHECK ((char_length(nidra) <= 500))
@@ -1062,6 +1120,57 @@
 | SELECT | `examinations_select` | USING private.can_read_clinical(clinic_id, patient_id) |
 | INSERT | `examinations_write` | CHECK ((EXISTS ( SELECT 1 FROM consultations c WHERE ((c.id = ayurvedic_examinations.consultation_id) AND (c.patient_id = ayurvedic_examinations.patient_id) AND (c.doctor_id = auth.uid()) AND (c.status = 'draft'::record_status)))) AND private.has_permission(clinic_id, 'clinical.write'::text)) |
 | UPDATE | `examinations_update` | USING (EXISTS ( SELECT 1 FROM consultations c WHERE ((c.id = ayurvedic_examinations.consultation_id) AND (c.doctor_id = auth.uid()) AND (c.status = 'draft'::record_status)))) · CHECK private.has_permission(clinic_id, 'clinical.write'::text) |
+| DELETE | — | Not granted to `authenticated` (only via RPC/trusted code) |
+
+### `consultation_amendments`
+
+**Purpose.** Dated, attributed addenda to a finalized consultation (corrections never overwrite the original).
+
+**Tenant scope.** Tenant-owned: `clinic_id` (immutable, composite FKs to parents). Written only by the treating doctor.
+
+**Retention and deletion.** Append-only for the clinical retention period.
+
+<details><summary>Fields</summary>
+
+| Column | Type | Null | Default |
+| --- | --- | --- | --- |
+| `id` | uuid | no | gen_random_uuid() |
+| `clinic_id` | uuid | no |  |
+| `consultation_id` | uuid | no |  |
+| `author_id` | uuid | no | auth.uid() |
+| `reason` | text | no |  |
+| `content` | text | no |  |
+| `created_at` | timestamp with time zone | no | now() |
+
+</details>
+
+<details><summary>Constraints and relationships</summary>
+
+- **Check** `consultation_amendments_content_check`: CHECK (((char_length(content) >= 1) AND (char_length(content) <= 5000)))
+- **Check** `consultation_amendments_reason_check`: CHECK (((char_length(reason) >= 1) AND (char_length(reason) <= 300)))
+- **FK** `consultation_amendments_author_id_fkey`: FOREIGN KEY (author_id) REFERENCES auth.users(id)
+- **FK** `consultation_amendments_clinic_id_fkey`: FOREIGN KEY (clinic_id) REFERENCES clinics(id) ON DELETE RESTRICT
+- **FK** `consultation_amendments_consultation_id_clinic_id_fkey`: FOREIGN KEY (consultation_id, clinic_id) REFERENCES consultations(id, clinic_id)
+- **PK** `consultation_amendments_pkey`: PRIMARY KEY (id)
+
+</details>
+
+<details><summary>Indexes</summary>
+
+- CREATE INDEX consultation_amendments_consultation_idx USING btree (consultation_id, created_at)
+- CREATE UNIQUE INDEX consultation_amendments_pkey USING btree (id)
+
+</details>
+
+**Triggers.** `consultation_amendments_audit`, `consultation_amendments_immutable`
+
+**Row Level Security** (role `authenticated`; `anon` has no access).
+
+| Command | Policy | Rule |
+| --- | --- | --- |
+| SELECT | `consultation_amendments_select` | USING (EXISTS ( SELECT 1 FROM consultations c WHERE (c.id = consultation_amendments.consultation_id))) |
+| INSERT | `consultation_amendments_insert` | CHECK ((author_id = auth.uid()) AND private.has_permission(clinic_id, 'clinical.write'::text) AND (EXISTS ( SELECT 1 FROM consultations c WHERE ((c.id = consultation_amendments.consultation_id) AND (c.status = 'finalized'::record_status) AND (c.doctor_id = auth.uid()))))) |
+| UPDATE | — | Not granted to `authenticated` (only via RPC/trusted code) |
 | DELETE | — | Not granted to `authenticated` (only via RPC/trusted code) |
 
 ### `consultations`
@@ -1107,6 +1216,8 @@
 | `assessment` | text | yes |  |
 | `created_by` | uuid | yes | auth.uid() |
 | `updated_by` | uuid | yes |  |
+| `pain_details` | text | yes |  |
+| `doctor_notes` | text | yes |  |
 
 </details>
 
@@ -1122,8 +1233,10 @@
 - **Check** `consultations_chief_complaint_check`: CHECK (((char_length(chief_complaint) >= 1) AND (char_length(chief_complaint) <= 2000)))
 - **Check** `consultations_clinical_findings_check`: CHECK ((char_length(clinical_findings) <= 5000))
 - **Check** `consultations_diagnosis_check`: CHECK ((char_length(diagnosis) <= 1000))
+- **Check** `consultations_doctor_notes_check`: CHECK ((char_length(doctor_notes) <= 5000))
 - **Check** `consultations_height_cm_check`: CHECK (((height_cm >= (30)::numeric) AND (height_cm <= (260)::numeric)))
 - **Check** `consultations_history_of_present_illness_check`: CHECK ((char_length(history_of_present_illness) <= 5000))
+- **Check** `consultations_pain_details_check`: CHECK ((char_length(pain_details) <= 2000))
 - **Check** `consultations_past_history_check`: CHECK ((char_length(past_history) <= 5000))
 - **Check** `consultations_pathya_check`: CHECK ((char_length(pathya) <= 2000))
 - **Check** `consultations_pulse_bpm_check`: CHECK (((pulse_bpm >= 20) AND (pulse_bpm <= 250)))
@@ -1538,7 +1651,7 @@
 
 | Command | Policy | Rule |
 | --- | --- | --- |
-| SELECT | `prescriptions_select` | USING (private.can_read_clinical(clinic_id, patient_id) OR private.has_permission(clinic_id, 'prescriptions.read_all'::text)) |
+| SELECT | `prescriptions_select` | USING (private.can_read_clinical(clinic_id, patient_id) OR (private.has_permission(clinic_id, 'prescriptions.read_all'::text) AND (status <> 'draft'::prescription_status))) |
 | INSERT | `prescriptions_insert` | CHECK ((doctor_id = auth.uid()) AND (status = 'draft'::prescription_status) AND (prescription_no IS NULL) AND (revision_number = 1) AND private.can_write_clinical(clinic_id, patient_id)) |
 | UPDATE | `prescriptions_update` | USING ((doctor_id = auth.uid()) AND private.has_permission(clinic_id, 'clinical.write'::text)) · CHECK ((doctor_id = auth.uid()) AND (status = ANY (ARRAY['draft'::prescription_status, 'cancelled'::prescription_status]))) |
 | DELETE | — | Not granted to `authenticated` (only via RPC/trusted code) |
@@ -1676,7 +1789,7 @@
 
 </details>
 
-**Triggers.** `invoices_audit`, `invoices_clinic_immutable`, `invoices_updated_at`, `invoices_updated_by`
+**Triggers.** `invoices_audit`, `invoices_branch_default`, `invoices_clinic_immutable`, `invoices_updated_at`, `invoices_updated_by`
 
 **Row Level Security** (role `authenticated`; `anon` has no access).
 
@@ -1689,7 +1802,7 @@
 
 ### `payments`
 
-**Purpose.** Payments against invoices, with method, reference and receipt number.
+**Purpose.** Payments against invoices, with method, reference, receipt number and reconciliation fields (settlement reference, reconciled by/at).
 
 **Tenant scope.** Tenant-owned: `clinic_id` (immutable, composite FKs to parents).
 
@@ -1711,6 +1824,10 @@
 | `received_by` | uuid | yes |  |
 | `created_at` | timestamp with time zone | no | now() |
 | `receipt_no` | text | yes |  |
+| `settlement_reference` | text | yes |  |
+| `reconciliation_note` | text | yes |  |
+| `reconciled_at` | timestamp with time zone | yes |  |
+| `reconciled_by` | uuid | yes |  |
 
 </details>
 
@@ -1718,11 +1835,15 @@
 
 - **Check** `payments_amount_paise_check`: CHECK ((amount_paise > 0))
 - **Check** `payments_notes_check`: CHECK ((char_length(notes) <= 500))
+- **Check** `payments_reconciled_by_check`: CHECK (((reconciled_at IS NULL) = (reconciled_by IS NULL)))
+- **Check** `payments_reconciliation_note_check`: CHECK ((char_length(reconciliation_note) <= 300))
 - **Check** `payments_reference_check`: CHECK ((char_length(reference) <= 80))
+- **Check** `payments_settlement_reference_check`: CHECK ((char_length(settlement_reference) <= 80))
 - **FK** `payments_clinic_id_fkey`: FOREIGN KEY (clinic_id) REFERENCES clinics(id) ON DELETE RESTRICT
 - **FK** `payments_invoice_id_clinic_id_fkey`: FOREIGN KEY (invoice_id, clinic_id) REFERENCES invoices(id, clinic_id)
 - **FK** `payments_patient_id_clinic_id_fkey`: FOREIGN KEY (patient_id, clinic_id) REFERENCES patients(id, clinic_id)
 - **FK** `payments_received_by_fkey`: FOREIGN KEY (received_by) REFERENCES auth.users(id) ON DELETE SET NULL
+- **FK** `payments_reconciled_by_fkey`: FOREIGN KEY (reconciled_by) REFERENCES auth.users(id) ON DELETE SET NULL
 - **PK** `payments_pkey`: PRIMARY KEY (id)
 - **Unique** `payments_id_clinic_key`: UNIQUE (id, clinic_id)
 - **Unique** `payments_receipt_unique`: UNIQUE (clinic_id, receipt_no)
@@ -1736,10 +1857,11 @@
 - CREATE INDEX payments_invoice_idx USING btree (invoice_id)
 - CREATE UNIQUE INDEX payments_pkey USING btree (id)
 - CREATE UNIQUE INDEX payments_receipt_unique USING btree (clinic_id, receipt_no)
+- CREATE INDEX payments_unreconciled_idx USING btree (clinic_id, paid_at) WHERE (reconciled_at IS NULL)
 
 </details>
 
-**Triggers.** `payments_audit`, `payments_immutable`
+**Triggers.** `payments_audit`, `payments_guard`, `payments_immutable`
 
 **Row Level Security** (role `authenticated`; `anon` has no access).
 
@@ -1932,22 +2054,29 @@
 | `accept_invitation` | definer | p_clinic uuid |
 | `appointment_status_report` | invoker | p_clinic uuid, p_from date, p_to date |
 | `book_follow_up` | invoker | p_follow_up uuid, p_starts_at timestamp with time zone, p_ends_at timestamp with time zone, p_branch uuid, p_reason text |
+| `branch_metrics` | definer | p_clinic uuid, p_from date, p_to date |
+| `clinic_overview` | definer | p_clinic uuid, p_from date, p_to date |
+| `clinic_trends` | definer | p_clinic uuid, p_from date, p_to date, p_bucket text |
 | `confirm_document_upload` | definer | p_document uuid |
 | `create_clinic` | definer | p_name text, p_city text, p_phone text, p_is_practitioner boolean |
 | `create_invoice` | definer | p_clinic uuid, p_patient uuid, p_items jsonb, p_discount_paise bigint, p_notes text, p_appointment uuid, p_branch uuid |
 | `dashboard_summary` | invoker | p_clinic uuid |
 | `delete_document` | definer | p_document uuid, p_reason text |
+| `doctor_overview` | invoker | p_clinic uuid |
 | `finalize_consultation` | definer | p_consultation uuid |
 | `find_user_id_by_email` | definer | p_email text |
-| `issue_prescription` | definer | p_prescription uuid |
+| `issue_prescription` | definer | p_prescription uuid, p_clinician_confirmed boolean |
 | `log_document_access` | definer | p_document uuid, p_actor uuid |
 | `log_session_event` | definer | p_clinic uuid, p_event text |
+| `member_last_activity` | definer | p_clinic uuid |
 | `my_permissions` | definer | p_clinic uuid |
+| `my_recent_patients` | definer | p_clinic uuid, p_limit integer |
 | `payment_method_report` | invoker | p_clinic uuid, p_from date, p_to date |
 | `platform_assign_plan` | definer | p_clinic uuid, p_plan_code text, p_status subscription_status, p_period_end timestamp with time zone |
 | `platform_list_clinics` | definer |  |
 | `platform_set_clinic_status` | definer | p_clinic uuid, p_status clinic_status, p_reason text |
 | `purge_expired_audit_events` | definer |  |
+| `reconcile_payment` | definer | p_payment uuid, p_reconciled boolean, p_settlement_reference text, p_note text |
 | `record_payment` | definer | p_invoice uuid, p_amount_paise bigint, p_method payment_method, p_reference text, p_paid_at timestamp with time zone, p_notes text |
 | `record_refund` | definer | p_invoice uuid, p_amount_paise bigint, p_method payment_method, p_reason text, p_payment uuid, p_reference text |
 | `revenue_report` | invoker | p_clinic uuid, p_from date, p_to date |

@@ -31,7 +31,7 @@ export const patientSchema = z.object({
     .transform((v) => (v === '' ? null : Number(v)))
     .refine((v) => v === null || (Number.isInteger(v) && v >= 0 && v <= 130), { message: 'range:0:130' }),
   status: z.enum(PATIENT_STATUSES),
-}).refine((v) => !(v.date_of_birth && v.approx_age_years !== null), { path: ['approx_age_years'], message: 'Use either a date of birth or an approximate age.' });
+}).refine((v) => !(v.date_of_birth && v.approx_age_years !== null), { path: ['approx_age_years'], message: 'dobOrAge' });
 
 export type PatientFormInput = z.input<typeof patientSchema>;
 export type PatientFormValues = z.output<typeof patientSchema>;

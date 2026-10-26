@@ -68,6 +68,49 @@ Legend: ✅ implemented and tested · 🟡 implemented, needs live-stack verific
 | Clinic time zone | ✅ | Calendar dates, numbering years and reports use `clinics.timezone`; the UI formats in it |
 | Generated database and permission docs | ✅ | `docs/DATABASE.md` and `docs/PERMISSIONS.md` generated from migrations; CI fails if stale or if a table is unannotated |
 
+## Phases 7–9 additions
+
+| Feature | Status | Acceptance criteria |
+| --- | --- | --- |
+| Admin overview (patients, new registrations, today's appointments, completed consultations, pending/overdue follow-ups, net collections, outstanding, unreconciled payments) | ✅ DB / 🟡 UI | `clinic_overview()` returns counts and sums only, branch-scoped; refuses doctors and other clinics (tests) |
+| Trends (registrations, appointments, consultations, collections) with 7/30/90-day ranges | ✅ DB / 🟡 UI | `clinic_trends()` buckets by day/week/month in the clinic time zone; each chart has a table view |
+| Branch comparison | ✅ DB / 🟡 UI | `branch_metrics()` lists only branches in the caller's scope; shown only when more than one branch is visible |
+| Recent clinic activity | 🟡 | Latest audit events for users with `audit.read` |
+| Demo labelling | ✅ DB / 🟡 UI | `settings.demo` can be set only by trusted server code; dashboards show a "Demo data" notice |
+| Appointment week view, branch assignment | 🟡 | Week starts Monday; branch picker appears when the clinic has several active branches |
+| Prescription search (number, patient, doctor, status, dates), detail, revision history, print, EN/MR | ✅ DB / 🟡 UI | Admins see issued/cancelled prescriptions only, never drafts or consultation notes (tests) |
+| Payment history, receipts, reconciliation | ✅ DB / 🟡 UI | Payment amounts are immutable; only reconciliation fields change, through `reconcile_payment()` with `payments.reconcile` |
+| Access reviews and member last activity | ✅ DB / 🟡 UI | Append-only reviews by `users.manage`; 90-day review reminder |
+| Clinic preferences (bilingual labels, default duration, prescription language, consultation sections) | ✅ DB / 🟡 UI | Unknown keys and wrong types are rejected by the database |
+| Doctor workspace (queue, in-progress, completed today/month, follow-ups, recently opened patients) | ✅ DB / 🟡 UI | Counts are RLS-scoped to the doctor; recent patients come only from the doctor's own view events and drop out when access ends |
+| Patient history form (रुग्णपत्रिका) | ✅ DB / 🟡 UI | See "Required fields" below |
+| Amendments to finalized consultations | ✅ DB / 🟡 UI | Only the treating doctor, only after finalizing; append-only; record shows "Amended" |
+| Clinician review before issuing | ✅ DB | `issue_prescription(id, true)` is required; the revision snapshot records the confirmation |
+| Print layout | 🟡 | Rows, sections and the signature block avoid page breaks; table headers repeat on each A4 page |
+| Bilingual UI | ✅ | Central dictionaries with English fallback (test); language switcher; Noto Sans Devanagari; optional bilingual labels "मराठी (English)"; no hardcoded strings in shared components (test) |
+
+### Patient history form — required fields and why
+
+| Field | Required | Reason |
+| --- | --- | --- |
+| Chief complaint | **Yes** | Every visit must record why the patient came; it identifies the visit in history and on prescriptions. |
+| Patient identity (first name) | **Yes** (at registration) | Needed to identify the record. All other demographics are optional (data minimisation). |
+| वेदना विशेष, present illness, past history | No | Relevant only to some complaints. |
+| Family history (मातृज, पितृज, स्वकुल) | No | Recorded when it informs the case. |
+| रजोइतिहास | No | Offered only when the patient is not recorded as male, and only if the clinic enables the section. |
+| Vitals, दिनचर्या, सामान्य परीक्षण, Nadi, Prakriti, dosha observations | No | Clinician's judgement per visit; numeric vitals are range-checked when entered. |
+| Investigations, attachments | No | Added as needed. |
+| Doctor's clinical notes | No | Private working notes; never printed. |
+
+Sections can be hidden clinic-wide in **Clinic Settings → Clinic preferences**. Hidden sections do not change existing records.
+
+### Language handling
+
+- The UI language (per user, stored in the browser and in `profiles.preferred_locale`) is separate from a patient's preferred language (`patients.preferred_locale`) and from a prescription's print language (`prescriptions.language`).
+- Medicine names, doses and clinician-written instructions are never machine-translated. The prescription stores separate English and Marathi instructions written by the clinician; printing uses the prescription's language and shows the other language only when that one is empty.
+- Numbers and dates use Latin digits with Indian grouping (₹1,23,456.78) and DD/MM/YYYY in both languages for consistency with printed records and payment systems.
+- Messages raised by database rules (e.g. "Payment exceeds the outstanding balance") are currently shown in English; generic errors are translated.
+
 ## Planned / not yet implemented 🔜
 
 - UI for the provisioned roles (Receptionist, Accountant, Pharmacist, Branch Manager). Their permission mappings already exist.
@@ -81,3 +124,5 @@ Legend: ✅ implemented and tested · 🟡 implemented, needs live-stack verific
 - Read-access logging beyond patient records and documents (e.g. consultation views); data-export tooling for DPDP Act requests.
 - E2E tests (Playwright) against a seeded local Supabase stack; pgTAP suite.
 - Marathi copy review by a native-speaking clinician.
+- Translated database rule messages (currently English).
+- Export to PDF/CSV files (printing uses the browser's "Save as PDF").

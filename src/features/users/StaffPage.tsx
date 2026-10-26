@@ -22,7 +22,9 @@ import { formatDate } from '@/lib/formatters';
 import { qk } from '@/lib/query/keys';
 import { useFieldError } from '@/lib/validation/useFieldError';
 import { useI18n } from '@/locales/i18n';
-import { fetchBranches, fetchMemberBranches, fetchStaff, inviteMember, setMemberBranches, updateMember } from '@/services/clinic';
+import { fetchBranches, fetchMemberActivity, fetchMemberBranches, fetchStaff, inviteMember, setMemberBranches, updateMember } from '@/services/clinic';
+import { AccessReviewCard } from './AccessReviewCard';
+import { formatDateTime } from '@/lib/formatters';
 import { ASSIGNABLE_ROLES, type AppRole, type Branch, type StaffMember } from '@/types/domain';
 
 const inviteSchema = z.object({
@@ -126,6 +128,7 @@ export function StaffPage() {
   const branches = useQuery({ queryKey: qk.branches(clinicId), queryFn: () => fetchBranches(clinicId) });
   const scopes = useQuery({ queryKey: [clinicId, 'member-branches'], queryFn: () => fetchMemberBranches(clinicId) });
   const canManage = can('users.manage');
+  const activity = useQuery({ queryKey: [clinicId, 'member-activity'], queryFn: () => fetchMemberActivity(clinicId), enabled: canManage });
   const branchName = new Map((branches.data ?? []).map((b) => [b.id, b.name]));
 
   const update = useMutation({
@@ -166,6 +169,19 @@ export function StaffPage() {
     },
     { key: 'status', header: t('staff.status'), cell: (m) => <StatusBadge status={m.status} label={m.status === 'invited' ? t('staff.pending') : t(`memberStatus.${m.status}`)} /> },
     { key: 'joined', header: t('staff.joined'), hideBelow: 'md', cell: (m) => <span className="tabular text-ink-muted">{formatDate(m.created_at)}</span> },
+    ...(canManage
+      ? [
+          {
+            key: 'activity',
+            header: t('staff.lastActivity'),
+            hideBelow: 'lg' as const,
+            cell: (m: StaffMember) => {
+              const a = activity.data?.get(m.user_id);
+              return <span className="tabular text-ink-muted">{a?.last_activity_at ? formatDateTime(a.last_activity_at) : t('staff.noActivity')}</span>;
+            },
+          },
+        ]
+      : []),
     {
       key: 'actions',
       header: <span className="sr-only">{t('common.actions')}</span>,
@@ -222,6 +238,11 @@ export function StaffPage() {
           <DataTable caption={t('staff.title')} columns={columns} rows={query.data!} rowKey={(m) => m.id} empty={<EmptyState icon={<Users />} />} />
         )}
       </Card>
+      {canManage && query.data && (
+        <div className="mt-6">
+          <AccessReviewCard memberCount={query.data.length} />
+        </div>
+      )}
       {canManage && <InviteDrawer open={inviteOpen} onOpenChange={setInviteOpen} branches={branches.data ?? []} />}
       <Modal
         open={Boolean(editing)}

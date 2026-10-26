@@ -48,6 +48,7 @@ export function PrescriptionPrintPage() {
         </Button>
       </div>
       <PrintableDocument
+        language={rx.data.language}
         clinic={clinic}
         title={printT('prescriptions.title')}
         meta={

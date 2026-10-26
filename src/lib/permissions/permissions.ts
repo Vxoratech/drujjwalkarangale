@@ -17,6 +17,7 @@ export const PERMISSIONS = [
   'billing.void',
   'payments.record',
   'payments.refund',
+  'payments.reconcile',
   'subscription.read',
   'consents.manage',
   'reports.read',
@@ -47,3 +48,4 @@ export function satisfies(granted: ReadonlySet<Permission>, requirement: Permiss
 export const CAN_VIEW_PATIENTS: readonly Permission[] = ['patients.read_all', 'patients.read_assigned'];
 export const CAN_VIEW_SCHEDULE: readonly Permission[] = ['appointments.read_all', 'appointments.read_own'];
 export const CAN_VIEW_CLINICAL: readonly Permission[] = ['clinical.read_all', 'clinical.read_assigned'];
+export const CAN_VIEW_PRESCRIPTIONS: readonly Permission[] = ['clinical.read_all', 'clinical.read_assigned', 'prescriptions.read_all'];

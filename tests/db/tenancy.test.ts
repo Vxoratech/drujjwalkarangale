@@ -376,7 +376,7 @@ describe('prescription revisions and templates', () => {
         JSON.stringify([{ medicine_name: 'Yogaraj Guggulu', form: 'vati', route: 'oral', dose: '2 tablets', quantity: '60', frequency: 'Twice daily', instructions_en: 'After food', instructions_mr: 'जेवणानंतर' }]),
       ]),
     )).id;
-    await asUser(db, ids.doctorA, (tx) => tx.query(`select public.issue_prescription($1)`, [rx]));
+    await asUser(db, ids.doctorA, (tx) => tx.query(`select public.issue_prescription($1, true)`, [rx]));
     const rev = await asUser(db, ids.doctorA, (tx) =>
       one<{ revision_number: number; snapshot: { items: { instructions_mr: string }[] } }>(tx, `select revision_number, snapshot from public.prescription_revisions where prescription_id = $1`, [rx]),
     );
@@ -396,7 +396,7 @@ describe('prescription revisions and templates', () => {
       ]),
     );
     const issued = await asUser(db, ids.doctorA, (tx) =>
-      one<{ prescription_no: string; revision_number: number }>(tx, `select (r).prescription_no, (r).revision_number from (select public.issue_prescription($1) r) s`, [rx]),
+      one<{ prescription_no: string; revision_number: number }>(tx, `select (r).prescription_no, (r).revision_number from (select public.issue_prescription($1, true) r) s`, [rx]),
     );
     expect(issued.revision_number).toBe(2);
     expect(issued.prescription_no).toMatch(/^RX-\d{4}-000001$/);

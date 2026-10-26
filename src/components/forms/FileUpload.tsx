@@ -1,6 +1,7 @@
 import { FileUp, Paperclip, X } from 'lucide-react';
 import { useId, useRef, useState, type DragEvent } from 'react';
 import { cn } from '@/lib/cn';
+import { useI18n } from '@/locales/i18n';
 
 export interface FileUploadProps {
   label: string;
@@ -16,6 +17,7 @@ export interface FileUploadProps {
 const DEFAULT_MAX = 10 * 1024 * 1024;
 
 export function FileUpload({ label, accept = 'application/pdf,image/png,image/jpeg,image/webp', maxBytes = DEFAULT_MAX, value, onChange, hint, disabled }: FileUploadProps) {
+  const { t } = useI18n();
   const id = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -26,11 +28,11 @@ export function FileUpload({ label, accept = 'application/pdf,image/png,image/jp
     if (!file) return;
     const allowed = accept.split(',').map((s) => s.trim());
     if (!allowed.includes(file.type)) {
-      setError('This file type is not supported.');
+      setError(t('upload.unsupportedType'));
       return;
     }
     if (file.size > maxBytes) {
-      setError(`File is larger than ${Math.round(maxBytes / 1024 / 1024)} MB.`);
+      setError(t('upload.tooLarge', { mb: Math.round(maxBytes / 1024 / 1024) }));
       return;
     }
     onChange(file);
@@ -54,7 +56,7 @@ export function FileUpload({ label, accept = 'application/pdf,image/png,image/jp
             <span className="truncate">{value.name}</span>
             <span className="tabular shrink-0 text-xs text-ink-muted">{(value.size / 1024).toFixed(0)} KB</span>
           </span>
-          <button type="button" className="rounded p-1 hover:bg-sage" onClick={() => onChange(null)} aria-label={`Remove ${value.name}`} disabled={disabled}>
+          <button type="button" className="rounded p-1 hover:bg-sage" onClick={() => onChange(null)} aria-label={t('upload.remove', { name: value.name })} disabled={disabled}>
             <X className="size-4" aria-hidden />
           </button>
         </div>
@@ -75,8 +77,8 @@ export function FileUpload({ label, accept = 'application/pdf,image/png,image/jp
           )}
         >
           <FileUp className="size-5 text-forest" aria-hidden />
-          <span className="font-medium text-forest-deep">Choose a file or drag it here</span>
-          {hint && <span className="text-xs text-ink-muted">{hint}</span>}
+          <span className="font-medium text-forest-deep">{t('upload.choose')}</span>
+          <span className="text-xs text-ink-muted">{hint ?? t('documents.fileHint')}</span>
           <input
             ref={inputRef}
             id={id}

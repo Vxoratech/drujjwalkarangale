@@ -18,6 +18,7 @@ import { consumeSessionExpired, requestPasswordReset, signIn, signUp, updatePass
 import { useAuth } from './AuthProvider';
 
 const PasswordInput = forwardRef<HTMLInputElement, ComponentProps<typeof Input>>(function PasswordInput(props, ref) {
+  const { t } = useI18n();
   const [visible, setVisible] = useState(false);
   return (
     <Input
@@ -25,7 +26,7 @@ const PasswordInput = forwardRef<HTMLInputElement, ComponentProps<typeof Input>>
       {...props}
       type={visible ? 'text' : 'password'}
       trailing={
-        <button type="button" className="rounded p-1 hover:bg-sage" onClick={() => setVisible((v) => !v)} aria-label={visible ? 'Hide password' : 'Show password'} aria-pressed={visible}>
+        <button type="button" className="rounded p-1 hover:bg-sage" onClick={() => setVisible((v) => !v)} aria-label={visible ? t('auth.hidePassword') : t('auth.showPassword')} aria-pressed={visible}>
           {visible ? <EyeOff className="size-4" aria-hidden /> : <Eye className="size-4" aria-hidden />}
         </button>
       }
@@ -50,7 +51,7 @@ export function SignInPage() {
     try {
       await signIn(values.email, values.password);
     } catch (error) {
-      setFormError(toUserMessage(error, 'Invalid login credentials.'));
+      setFormError(toUserMessage(error, t('auth.invalidCredentials')));
     }
   });
 

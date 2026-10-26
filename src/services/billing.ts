@@ -1,5 +1,5 @@
 import { getSupabase } from '@/lib/supabase/client';
-import type { Invoice, InvoiceDetail, InvoiceItemType, InvoiceStatus, Page, Paise, PaymentMethod, Timestamp, UUID } from '@/types/domain';
+import type { PaymentWithContext, Invoice, InvoiceDetail, InvoiceItemType, InvoiceStatus, Page, Paise, PaymentMethod, Timestamp, UUID } from '@/types/domain';
 import { unwrap, unwrapPage } from './_helpers';
 
 const LIST = 'id, clinic_id, patient_id, appointment_id, invoice_no, status, issue_date, subtotal_paise, tax_paise, discount_paise, total_paise, amount_paid_paise, amount_refunded_paise, notes, void_reason, created_at, patient:patients(id, first_name, last_name, patient_code, phone)';
@@ -101,4 +101,45 @@ export function previewTotals(items: Pick<InvoiceLineInput, 'quantity' | 'unit_p
   }
   const discount = Number.isFinite(discountPaise) ? discountPaise : 0;
   return { subtotal, tax, discount, total: subtotal + tax - discount };
+}
+
+export interface PaymentListParams {
+  page: number;
+  pageSize: number;
+  from?: string;
+  to?: string;
+  method?: PaymentMethod;
+  reconciled?: boolean;
+}
+
+/** Payment history across invoices (RLS limits rows to the caller's billing scope). */
+export async function listPayments(clinicId: UUID, params: PaymentListParams): Promise<Page<PaymentWithContext>> {
+  let q = getSupabase()
+    .from('payments')
+    .select('*, invoice:invoices(id, invoice_no), patient:patients(id, first_name, last_name, patient_code)', { count: 'exact' })
+    .eq('clinic_id', clinicId);
+  if (params.from) q = q.gte('paid_at', params.from);
+  if (params.to) q = q.lt('paid_at', params.to);
+  if (params.method) q = q.eq('method', params.method);
+  if (params.reconciled === true) q = q.not('reconciled_at', 'is', null);
+  if (params.reconciled === false) q = q.is('reconciled_at', null);
+  const from = (params.page - 1) * params.pageSize;
+  return unwrapPage<PaymentWithContext>(await q.order('paid_at', { ascending: false }).range(from, from + params.pageSize - 1));
+}
+
+export async function getPayment(clinicId: UUID, id: UUID): Promise<PaymentWithContext> {
+  return unwrap<PaymentWithContext>(
+    await getSupabase().from('payments').select('*, invoice:invoices(id, invoice_no), patient:patients(id, first_name, last_name, patient_code)').eq('clinic_id', clinicId).eq('id', id).single(),
+  );
+}
+
+export async function reconcilePayment(input: { paymentId: UUID; reconciled: boolean; settlementReference: string | null; note: string | null }): Promise<void> {
+  unwrap(
+    await getSupabase().rpc('reconcile_payment', {
+      p_payment: input.paymentId,
+      p_reconciled: input.reconciled,
+      p_settlement_reference: input.settlementReference,
+      p_note: input.note,
+    }),
+  );
 }

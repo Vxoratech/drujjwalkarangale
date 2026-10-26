@@ -1,5 +1,5 @@
 import { getSupabase } from '@/lib/supabase/client';
-import type { AppointmentStatus, AuditEvent, AppNotification, DashboardSummary, DateString, Paise, PaymentMethod, RevenueRow, UUID } from '@/types/domain';
+import type { AppointmentStatus, AuditEvent, BranchMetric, ClinicOverview, DoctorOverview, RecentPatient, TrendRow, AppNotification, DashboardSummary, DateString, Paise, PaymentMethod, RevenueRow, UUID } from '@/types/domain';
 import { unwrap, unwrapPage } from './_helpers';
 
 export async function fetchDashboardSummary(clinicId: UUID): Promise<DashboardSummary> {
@@ -48,4 +48,29 @@ export async function listNotifications(clinicId: UUID): Promise<AppNotification
 export async function markNotificationsRead(ids: UUID[]): Promise<void> {
   if (ids.length === 0) return;
   unwrap(await getSupabase().from('notifications').update({ read_at: new Date().toISOString() }).in('id', ids).select('id'));
+}
+
+const num = <T extends object>(row: T): T =>
+  Object.fromEntries(Object.entries(row).map(([k, v]) => [k, typeof v === 'string' && /^-?\d+$/.test(v) ? Number(v) : v])) as T;
+
+/** Admin overview: aggregate counts and sums only (no record contents), branch-scoped server-side. */
+export async function fetchClinicOverview(clinicId: UUID, from: DateString, to: DateString): Promise<ClinicOverview> {
+  return num(unwrap<ClinicOverview>(await getSupabase().rpc('clinic_overview', { p_clinic: clinicId, p_from: from, p_to: to })));
+}
+
+export async function fetchClinicTrends(clinicId: UUID, from: DateString, to: DateString, bucket: 'day' | 'week' | 'month'): Promise<TrendRow[]> {
+  return unwrap<TrendRow[]>(await getSupabase().rpc('clinic_trends', { p_clinic: clinicId, p_from: from, p_to: to, p_bucket: bucket })).map(num);
+}
+
+export async function fetchBranchMetrics(clinicId: UUID, from: DateString, to: DateString): Promise<BranchMetric[]> {
+  return unwrap<BranchMetric[]>(await getSupabase().rpc('branch_metrics', { p_clinic: clinicId, p_from: from, p_to: to })).map(num);
+}
+
+export async function fetchDoctorOverview(clinicId: UUID): Promise<DoctorOverview> {
+  return num(unwrap<DoctorOverview>(await getSupabase().rpc('doctor_overview', { p_clinic: clinicId })));
+}
+
+/** Patients the current user opened recently (their own view events only). */
+export async function fetchRecentPatients(clinicId: UUID): Promise<RecentPatient[]> {
+  return unwrap<RecentPatient[]>(await getSupabase().rpc('my_recent_patients', { p_clinic: clinicId, p_limit: 8 }));
 }

@@ -1,5 +1,6 @@
 import { getSupabase } from '@/lib/supabase/client';
 import type {
+  ConsultationAmendment,
   AyurvedicExamination,
   Consultation,
   ExamFieldDefinition,
@@ -21,12 +22,19 @@ import { unwrap } from './_helpers';
 export type ConsultationSummary = Pick<
   Consultation,
   'id' | 'patient_id' | 'doctor_id' | 'status' | 'visit_date' | 'chief_complaint' | 'diagnosis' | 'ayurvedic_diagnosis' | 'follow_up_date'
-> & { patient?: { first_name: string; last_name: string; patient_code: string } | null };
+> & {
+  patient?: { first_name: string; last_name: string; patient_code: string } | null;
+  exam?: Pick<AyurvedicExamination, 'prakriti' | 'vikriti' | 'agni' | 'ama' | 'nadi'>[] | Pick<AyurvedicExamination, 'prakriti' | 'vikriti' | 'agni' | 'ama' | 'nadi'> | null;
+  amendments?: { id: UUID }[];
+};
 
 const SUMMARY = 'id, patient_id, doctor_id, status, visit_date, chief_complaint, diagnosis, ayurvedic_diagnosis, follow_up_date';
 
 export async function listConsultations(clinicId: UUID, params: { patientId?: UUID; doctorId?: UUID; status?: 'draft' | 'finalized'; limit?: number }): Promise<ConsultationSummary[]> {
-  let q = getSupabase().from('consultations').select(`${SUMMARY}, patient:patients(first_name, last_name, patient_code)`).eq('clinic_id', clinicId);
+  let q = getSupabase()
+    .from('consultations')
+    .select(`${SUMMARY}, patient:patients(first_name, last_name, patient_code), exam:ayurvedic_examinations(prakriti, vikriti, agni, ama, nadi), amendments:consultation_amendments(id)`)
+    .eq('clinic_id', clinicId);
   if (params.patientId) q = q.eq('patient_id', params.patientId);
   if (params.doctorId) q = q.eq('doctor_id', params.doctorId);
   if (params.status) q = q.eq('status', params.status);
@@ -110,8 +118,61 @@ export async function savePrescriptionDraft(
   );
 }
 
-export async function issuePrescription(id: UUID): Promise<Prescription> {
-  return unwrap<Prescription>(await getSupabase().rpc('issue_prescription', { p_prescription: id }));
+/** Issuing requires the clinician's explicit confirmation that every medicine and dose was reviewed. */
+export async function issuePrescription(id: UUID, clinicianConfirmed: boolean): Promise<Prescription> {
+  return unwrap<Prescription>(await getSupabase().rpc('issue_prescription', { p_prescription: id, p_clinician_confirmed: clinicianConfirmed }));
+}
+
+export type PrescriptionListItem = Omit<Prescription, 'items'> & {
+  items: Pick<PrescriptionItem, 'medicine_name'>[];
+  patient: { id: UUID; first_name: string; last_name: string; patient_code: string } | null;
+};
+
+export interface PrescriptionSearchParams {
+  page: number;
+  pageSize: number;
+  status?: 'issued' | 'draft' | 'cancelled';
+  doctorId?: UUID;
+  from?: string;
+  to?: string;
+  /** Prescription number, patient name or patient ID. */
+  search?: string;
+}
+
+/** Clinic-wide prescription search (RLS limits admins to issued/cancelled prescriptions). */
+export async function searchPrescriptions(clinicId: UUID, params: PrescriptionSearchParams): Promise<{ rows: PrescriptionListItem[]; total: number }> {
+  const db = getSupabase();
+  let q = db
+    .from('prescriptions')
+    .select('id, clinic_id, patient_id, doctor_id, consultation_id, prescription_no, status, language, revision_number, issued_at, created_at, items:prescription_items(medicine_name), patient:patients!inner(id, first_name, last_name, patient_code)', { count: 'exact' })
+    .eq('clinic_id', clinicId);
+  if (params.status) q = q.eq('status', params.status);
+  if (params.doctorId) q = q.eq('doctor_id', params.doctorId);
+  if (params.from) q = q.gte('created_at', params.from);
+  if (params.to) q = q.lt('created_at', params.to);
+  const term = params.search?.trim().replace(/[%_,().*\\]/g, '');
+  if (term) {
+    if (/^RX-/i.test(term)) q = q.ilike('prescription_no', `%${term}%`);
+    else q = q.or(`first_name.ilike.%${term}%,last_name.ilike.%${term}%,patient_code.ilike.%${term}%`, { referencedTable: 'patients' });
+  }
+  const from = (params.page - 1) * params.pageSize;
+  const res = await q.order('created_at', { ascending: false }).range(from, from + params.pageSize - 1);
+  if (res.error) throw res.error;
+  return { rows: (res.data ?? []) as unknown as PrescriptionListItem[], total: res.count ?? 0 };
+}
+
+export async function listAmendments(consultationId: UUID): Promise<ConsultationAmendment[]> {
+  return unwrap<ConsultationAmendment[]>(await getSupabase().from('consultation_amendments').select('*').eq('consultation_id', consultationId).order('created_at'));
+}
+
+export async function addAmendment(clinicId: UUID, input: { consultationId: UUID; reason: string; content: string }): Promise<void> {
+  unwrap(
+    await getSupabase()
+      .from('consultation_amendments')
+      .insert({ clinic_id: clinicId, consultation_id: input.consultationId, reason: input.reason, content: input.content })
+      .select('id')
+      .single(),
+  );
 }
 
 /** Re-open an issued prescription as the next revision; the issued version stays in the revision history. */

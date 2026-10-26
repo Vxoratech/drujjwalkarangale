@@ -11,6 +11,7 @@ import { addDaysISO, formatDate, formatINR, formatNumber, todayISO } from '@/lib
 import { qk } from '@/lib/query/keys';
 import { useI18n } from '@/locales/i18n';
 import { fetchAppointmentStatusReport, fetchPaymentMethodReport, fetchRevenueReport } from '@/services/reports';
+import { BranchComparison, TrendCharts } from '@/features/dashboard/AdminOverview';
 
 type Preset = 'last7' | 'last30' | 'thisMonth';
 
@@ -19,6 +20,11 @@ function presetRange(p: Preset): { from: string; to: string } {
   if (p === 'last7') return { from: addDaysISO(today, -6), to: today };
   if (p === 'last30') return { from: addDaysISO(today, -29), to: today };
   return { from: `${today.slice(0, 8)}01`, to: today };
+}
+
+function bucketFor(from: string, to: string): 'day' | 'week' | 'month' {
+  const days = (Date.parse(to) - Date.parse(from)) / 86_400_000;
+  return days > 120 ? 'month' : days > 31 ? 'week' : 'day';
 }
 
 /** Horizontal bar used for small, accessible charts (values are also shown as text). */
@@ -81,6 +87,11 @@ export function ReportsPage() {
         <StatCard label={t('reports.collected')} value={formatINR(totalCollected, { whole: true })} accent="gold" loading={revenue.isLoading} />
         <StatCard label={t('reports.invoices')} value={formatNumber(invoiceCount)} accent="info" loading={revenue.isLoading} />
       </section>
+
+      <div className="mb-6 space-y-6">
+        <TrendCharts from={range.from} to={range.to} bucket={bucketFor(range.from, range.to)} />
+        <BranchComparison from={range.from} to={range.to} />
+      </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">

@@ -298,7 +298,7 @@ describe('clinical records', () => {
       ),
     );
     await rejects(
-      asUser(f.db, f.doctorA, (tx) => tx.query(`select public.issue_prescription($1)`, [rx.id])),
+      asUser(f.db, f.doctorA, (tx) => tx.query(`select public.issue_prescription($1, true)`, [rx.id])),
       /at least one medicine/,
     );
     await asUser(f.db, f.doctorA, (tx) =>
@@ -316,7 +316,7 @@ describe('clinical records', () => {
       /row-level security|issued and revised only through/,
     );
     const issued = await asUser(f.db, f.doctorA, (tx) =>
-      one<{ prescription_no: string }>(tx, `select (public.issue_prescription($1)).prescription_no`, [rx.id]),
+      one<{ prescription_no: string }>(tx, `select (public.issue_prescription($1, true)).prescription_no`, [rx.id]),
     );
     expect(issued.prescription_no).toMatch(/^RX-\d{4}-000001$/);
     await rejects(

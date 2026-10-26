@@ -15,6 +15,7 @@ import { qk } from '@/lib/query/keys';
 import { useI18n } from '@/locales/i18n';
 import { listInvoices, type InvoiceListParams } from '@/services/billing';
 import type { Invoice, InvoiceStatus } from '@/types/domain';
+import { BillingTabs } from './BillingTabs';
 import { InvoiceStatusBadge } from './InvoiceStatusBadge';
 
 const PAGE_SIZE = 20;
@@ -67,6 +68,7 @@ export function InvoicesPage() {
           )
         }
       />
+      <BillingTabs />
       <Card>
         <Toolbar>
           <div className="w-full sm:max-w-xs">

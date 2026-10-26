@@ -1,3 +1,4 @@
+import { translateCurrent, type TranslationKey } from '@/locales/i18n';
 import { Eye, FilePen, FilePlus2, FileSearch, FileX2, KeyRound } from 'lucide-react';
 import type { BadgeTone } from '@/components/ui/Badge';
 import type { AuditAction } from '@/types/domain';
@@ -20,7 +21,11 @@ export const AUDIT_TONES: Record<AuditAction, BadgeTone> = {
   security: 'forest',
 };
 
+
+/** Display name for an audited record type, from the dictionary with a readable fallback. */
 export function humanizeEntity(entity: string): string {
+  const label = translateCurrent(`auditEntity.${entity}` as TranslationKey);
+  if (label !== `auditEntity.${entity}`) return label;
   return entity.replace(/_/g, ' ').replace(/s$/, '').replace(/^\w/, (c) => c.toUpperCase());
 }
 

@@ -2,6 +2,7 @@ import { ChevronRight } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { cn } from '@/lib/cn';
+import { useI18n } from '@/locales/i18n';
 
 export interface Crumb {
   label: string;
@@ -9,9 +10,10 @@ export interface Crumb {
 }
 
 export function Breadcrumb({ items }: { items: Crumb[] }) {
+  const { t } = useI18n();
   if (items.length === 0) return null;
   return (
-    <nav aria-label="Breadcrumb" className="no-print">
+    <nav aria-label={t('nav.breadcrumb')} className="no-print">
       <ol className="flex flex-wrap items-center gap-1 text-sm text-ink-muted">
         {items.map((item, i) => {
           const last = i === items.length - 1;

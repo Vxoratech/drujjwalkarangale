@@ -5,6 +5,7 @@
 import { CalendarDays, FilePen, IndianRupee, Plus, UsersRound } from 'lucide-react';
 import { useState } from 'react';
 import { PatientIdentity } from '@/components/data-display/Avatar';
+import { ColumnChart } from '@/components/data-display/ColumnChart';
 import { DataTable, type SortState } from '@/components/data-display/DataTable';
 import { Timeline } from '@/components/data-display/Timeline';
 import { Alert, EmptyState, ErrorState, PermissionDenied, SkeletonRows } from '@/components/feedback/States';
@@ -54,6 +55,21 @@ export function Gallery() {
         <StatCard label="Collected this month" value={formatINR(48236000, { whole: true })} icon={<IndianRupee />} accent="gold" />
         <StatCard label="Draft consultations" value="3" icon={<FilePen />} accent="warning" />
       </section>
+      <Card>
+        <CardHeader title="ColumnChart" />
+        <CardBody className="grid gap-8 md:grid-cols-2">
+          <ColumnChart
+            title="New patients"
+            data={[3, 5, 2, 8, 6, 4, 9, 7, 5, 6, 11, 4, 3, 6].map((v, i) => ({ key: String(i), label: `${String(i + 12).padStart(2, '0')}/10`, value: v }))}
+          />
+          <ColumnChart
+            title="Collected"
+            data={[1250000, 860000, 0, 1940000, 1520000, 730000, 2100000].map((v, i) => ({ key: String(i), label: `${String(i + 19).padStart(2, '0')}/10`, value: v }))}
+            formatValue={(v) => formatINR(v, { whole: true })}
+            formatTick={(v) => `₹${Math.round(v / 100000)}K`}
+          />
+        </CardBody>
+      </Card>
       <div className="flex flex-wrap gap-2">
         {['scheduled', 'checked_in', 'in_consultation', 'completed', 'cancelled', 'no_show', 'draft', 'finalized', 'partially_paid'].map((s) => (
           <StatusBadge key={s} status={s} label={s.replace(/_/g, ' ')} />

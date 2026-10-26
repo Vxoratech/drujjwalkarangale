@@ -22,9 +22,10 @@ Permissions are granted per membership (a user can hold different roles in diffe
 | `patients.read_all` | View every patient in the clinic | ✓ |  | ✓ | ✓ | ✓ | ✓ |
 | `patients.read_assigned` | View patients assigned to or booked with me |  | ✓ |  |  |  |  |
 | `patients.update` | Edit patient demographics | ✓ | ✓ | ✓ |  |  | ✓ |
+| `payments.reconcile` | Mark payments as reconciled with bank/UPI settlements | ✓ |  |  | ✓ |  |  |
 | `payments.record` | Record payments | ✓ |  | ✓ | ✓ |  | ✓ |
 | `payments.refund` | Record refunds against payments | ✓ |  |  | ✓ |  |  |
-| `prescriptions.read_all` | View issued prescriptions (dispensing) |  |  |  |  | ✓ |  |
+| `prescriptions.read_all` | View issued prescriptions (dispensing) | ✓ |  |  |  | ✓ |  |
 | `reports.read` | View business reports | ✓ |  |  | ✓ |  | ✓ |
 | `settings.manage` | Manage clinic profile, branches and branding | ✓ |  |  |  |  |  |
 | `subscription.read` | View the clinic subscription and plan limits | ✓ |  |  |  |  |  |

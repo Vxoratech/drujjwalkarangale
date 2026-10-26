@@ -16,7 +16,7 @@ export function Pagination({ page, pageSize, total, onPageChange }: PaginationPr
   const from = (page - 1) * pageSize + 1;
   const to = Math.min(total, page * pageSize);
   return (
-    <nav aria-label="Pagination" className="flex items-center justify-between gap-3 border-t border-line px-4 py-3 text-sm text-ink-muted">
+    <nav aria-label={t('common.pagination')} className="flex items-center justify-between gap-3 border-t border-line px-4 py-3 text-sm text-ink-muted">
       <p className="tabular">{t('common.showing', { from, to, total })}</p>
       <div className="flex items-center gap-1">
         <IconButton size="sm" label={t('common.previous')} icon={<ChevronLeft />} disabled={page <= 1} onClick={() => onPageChange(page - 1)} />

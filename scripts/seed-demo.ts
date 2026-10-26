@@ -79,6 +79,8 @@ async function main(): Promise<void> {
       email: 'clinic@demo.vaidyora.test',
       consultation_fee_paise: 50000,
       invoice_prefix: 'KAC',
+      // Flags every dashboard as demo data (only trusted server code may set this).
+      settings: { demo: true, bilingual_labels: true, default_appointment_minutes: 30, prescription_language: 'patient' },
     }).eq('id', clinicId).select().single(),
     'clinic profile',
   );
@@ -121,6 +123,8 @@ async function main(): Promise<void> {
     await owner.from('consultations').insert({
       clinic_id: clinicId, patient_id: p1!.id, doctor_id: ownerId,
       chief_complaint: 'Bilateral knee pain, worse in the morning, for 3 months',
+      pain_details: 'Dull, aching; worse with cold weather and stairs; eased by warm oil massage',
+      doctor_notes: 'Consider Janu basti if no response in 2 weeks.',
       assessment: 'Degenerative joint changes with Vata predominance',
       history_of_present_illness: 'Stiffness ~20 min after waking. Crepitus on movement. No swelling.',
       pulse_bpm: 76, bp_systolic: 128, bp_diastolic: 82, weight_kg: 68, height_cm: 158,
@@ -139,6 +143,8 @@ async function main(): Promise<void> {
       shabda: 'Clear', sparsha: 'Dry, cool over joints', drik: 'Normal', akriti: 'Madhyama',
       vata_score: 7, pitta_score: 4, kapha_score: 2, ama: 'mild', nidra: 'Light sleep, 5–6 h', appetite: 'Variable', bowel_habits: 'Hard stools, alternate days',
       dinacharya: 'Late dinner, little morning activity',
+      family_history_maternal: 'Mother: osteoarthritis', family_history_paternal: 'Father: type 2 diabetes', family_history_self: 'None',
+      menstrual_history: 'Menopause at 50; no complaints',
     }).select('id').single(),
     'examination',
   );
@@ -154,7 +160,7 @@ async function main(): Promise<void> {
     ]).select(),
     'prescription items',
   );
-  must(await owner.rpc('issue_prescription', { p_prescription: rx.id }), 'issue prescription');
+  must(await owner.rpc('issue_prescription', { p_prescription: rx.id, p_clinician_confirmed: true }), 'issue prescription');
   must(await owner.rpc('finalize_consultation', { p_consultation: consult.id }), 'finalize consultation');
   must(
     await owner.from('investigations').insert({ clinic_id: clinicId, patient_id: p1!.id, consultation_id: consult.id, ordered_by: ownerId, test_name: 'X-ray both knees AP/Lateral', category: 'imaging' }).select().single(),

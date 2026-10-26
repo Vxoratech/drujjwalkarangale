@@ -7,7 +7,7 @@ import { ClinicProvider, useClinicGate } from '@/features/clinic/ClinicProvider'
 import { ClinicPickerScreen, InvitationScreen, SuspendedScreen } from '@/features/clinic/GateScreens';
 import { OnboardingPage } from '@/features/clinic/OnboardingPage';
 import { RequirePermission } from '@/lib/permissions/Guards';
-import { CAN_VIEW_PATIENTS, CAN_VIEW_SCHEDULE, type PermissionRequirement } from '@/lib/permissions/permissions';
+import { CAN_VIEW_PATIENTS, CAN_VIEW_PRESCRIPTIONS, CAN_VIEW_SCHEDULE, type PermissionRequirement } from '@/lib/permissions/permissions';
 import { toUserMessage } from '@/lib/errors';
 import { AppShell } from './layouts/AppShell';
 import { NotFoundPage, RouteErrorBoundary } from './RouteErrors';
@@ -78,14 +78,16 @@ const appRoutes: RouteObject[] = [
   {
     path: 'prescriptions',
     children: [
+      { index: true, element: guarded(CAN_VIEW_PRESCRIPTIONS, page(() => import('@/features/prescriptions/PrescriptionsPage'), 'PrescriptionsPage')) },
       { path: 'new', element: guarded('clinical.write', page(() => import('@/features/prescriptions/PrescriptionEditorPage'), 'PrescriptionEditorPage')) },
-      { path: ':prescriptionId', element: guarded(['clinical.read_all', 'clinical.read_assigned', 'prescriptions.read_all'], page(() => import('@/features/prescriptions/PrescriptionEditorPage'), 'PrescriptionEditorPage')) },
+      { path: ':prescriptionId', element: guarded(CAN_VIEW_PRESCRIPTIONS, page(() => import('@/features/prescriptions/PrescriptionEditorPage'), 'PrescriptionEditorPage')) },
     ],
   },
   {
     path: 'billing',
     children: [
       { index: true, element: guarded('billing.read', page(() => import('@/features/billing/InvoicesPage'), 'InvoicesPage')) },
+      { path: 'payments', element: guarded('billing.read', page(() => import('@/features/billing/PaymentsPage'), 'PaymentsPage')) },
       { path: 'new', element: guarded('billing.create', page(() => import('@/features/billing/CreateInvoicePage'), 'CreateInvoicePage')) },
       { path: ':invoiceId', element: guarded('billing.read', page(() => import('@/features/billing/InvoiceDetailPage'), 'InvoiceDetailPage')) },
     ],
@@ -116,9 +118,10 @@ export const routes: RouteObject[] = [
               // Print views render without the app chrome.
               {
                 path: '/print/prescriptions/:prescriptionId',
-                element: guarded(['clinical.read_all', 'clinical.read_assigned', 'prescriptions.read_all'], page(() => import('@/features/prescriptions/PrescriptionPrintPage'), 'PrescriptionPrintPage')),
+                element: guarded(CAN_VIEW_PRESCRIPTIONS, page(() => import('@/features/prescriptions/PrescriptionPrintPage'), 'PrescriptionPrintPage')),
               },
               { path: '/print/invoices/:invoiceId', element: guarded('billing.read', page(() => import('@/features/billing/InvoicePrintPage'), 'InvoicePrintPage')) },
+              { path: '/print/receipts/:paymentId', element: guarded('billing.read', page(() => import('@/features/billing/ReceiptPrintPage'), 'ReceiptPrintPage')) },
               { path: '/', element: <AppShell />, children: appRoutes },
             ],
           },

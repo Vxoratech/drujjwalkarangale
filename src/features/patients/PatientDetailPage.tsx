@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { AlertTriangle, CalendarPlus, FilePlus2, Pencil, Pill, Receipt, Stethoscope } from 'lucide-react';
+import { AlertTriangle, CalendarClock, CalendarPlus, FilePlus2, Pencil, Pill, Receipt, Stethoscope } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Alert, EmptyState, ErrorState, FullPageSpinner, SkeletonRows } from '@/components/feedback/States';
@@ -14,12 +14,13 @@ import { InvestigationsPanel } from '@/features/investigations/InvestigationsPan
 import { useDoctors } from '@/hooks/useDoctors';
 import { isPermissionError, toUserMessage } from '@/lib/errors';
 import { ageLabel, formatDate, formatDateTime, formatINR, fullName } from '@/lib/formatters';
-import { CAN_VIEW_CLINICAL } from '@/lib/permissions/permissions';
+import { CAN_VIEW_CLINICAL, CAN_VIEW_PRESCRIPTIONS } from '@/lib/permissions/permissions';
 import { qk } from '@/lib/query/keys';
 import { useI18n } from '@/locales/i18n';
 import { listPatientAppointments } from '@/services/appointments';
 import { listInvoices } from '@/services/billing';
-import { listConsultations, listPrescriptions } from '@/services/clinical';
+import { listConsultations, listFollowUps, listPrescriptions } from '@/services/clinical';
+import type { AyurvedicExamination } from '@/types/domain';
 import { viewPatient } from '@/services/patients';
 import { DocumentsPanel } from '@/features/documents/DocumentsPanel';
 import { ConsentsPanel } from './ConsentsPanel';
@@ -56,8 +57,62 @@ function VisitsTab({ patientId }: { patientId: string }) {
                 {c.follow_up_date && ` · ${t('consultations.followUp')}: ${formatDate(c.follow_up_date)}`}
               </p>
             </div>
-            <StatusBadge status={c.status} label={c.status === 'draft' ? t('consultations.draft') : t('consultations.final')} />
+            <span className="flex items-center gap-1.5">
+              {(c.amendments?.length ?? 0) > 0 && <Badge tone="gold">{t('consultations.amended')}</Badge>}
+              <StatusBadge status={c.status} label={c.status === 'draft' ? t('consultations.draft') : t('consultations.final')} />
+            </span>
           </Link>
+          <ExamSummary exam={Array.isArray(c.exam) ? c.exam[0] : c.exam} />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** One-line examination history under each visit (clinician-entered values only). */
+function ExamSummary({ exam }: { exam: Pick<AyurvedicExamination, 'prakriti' | 'vikriti' | 'agni' | 'ama' | 'nadi'> | null | undefined }) {
+  const { t } = useI18n();
+  if (!exam) return null;
+  const parts = [
+    exam.prakriti && `${t('exam.prakriti')}: ${t(`prakriti.${exam.prakriti}`)}`,
+    exam.vikriti.length > 0 && `${t('exam.vikriti')}: ${exam.vikriti.map((d) => t(`dosha.${d}`)).join(', ')}`,
+    exam.agni && `${t('exam.agni')}: ${t(`agni.${exam.agni}`)}`,
+    exam.ama && `${t('exam.ama')}: ${t(`ama.${exam.ama}`)}`,
+    exam.nadi && `${t('exam.nadi')}: ${exam.nadi}`,
+  ].filter(Boolean);
+  if (parts.length === 0) return null;
+  return <p className="px-4 pb-3 text-xs text-ink-muted">{parts.join(' · ')}</p>;
+}
+
+function FollowUpsTab({ patientId }: { patientId: string }) {
+  const { t } = useI18n();
+  const { clinicId } = useClinic();
+  const { names } = useDoctors();
+  const q = useQuery({ queryKey: [clinicId, 'follow-ups', { patientId }], queryFn: () => listFollowUps(clinicId, { patientId }) });
+  if (q.isLoading) return <SkeletonRows rows={2} />;
+  if (q.isError) return <ErrorState compact onRetry={() => void q.refetch()} />;
+  if (q.data!.length === 0) return <EmptyState compact icon={<CalendarClock />} title={t('followUps.none')} />;
+  return (
+    <ul className="divide-y divide-line rounded-lg border border-line bg-surface">
+      {[...q.data!].reverse().map((f) => (
+        <li key={f.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+          <div>
+            <p className="tabular font-medium">
+              {t('followUps.due')} {formatDate(f.due_date)}
+            </p>
+            <p className="text-xs text-ink-muted">
+              {names.get(f.doctor_id) ?? ''}
+              {f.reason && ` · ${f.reason}`}
+            </p>
+          </div>
+          <span className="flex items-center gap-2">
+            <StatusBadge status={f.status === 'pending' ? 'scheduled' : f.status === 'booked' ? 'checked_in' : f.status} label={t(`followUpStatus.${f.status}`)} />
+            {f.appointment_id && (
+              <Link to={`/appointments/${f.appointment_id}`} className="text-sm font-medium text-forest hover:underline">
+                {t('common.view')}
+              </Link>
+            )}
+          </span>
         </li>
       ))}
     </ul>
@@ -162,6 +217,8 @@ export function PatientDetailPage() {
   const name = fullName(p);
   const age = ageLabel(p);
   const canClinical = can(CAN_VIEW_CLINICAL);
+  const canPrescriptions = can(CAN_VIEW_PRESCRIPTIONS);
+  const canFollowUps = canClinical || can('appointments.manage');
 
   return (
     <>
@@ -214,10 +271,11 @@ export function PatientDetailPage() {
         <TabsList label={name}>
           <TabsTrigger value="overview">{t('patients.overview')}</TabsTrigger>
           {canClinical && <TabsTrigger value="visits">{t('patients.visits')}</TabsTrigger>}
-          {canClinical && <TabsTrigger value="prescriptions">{t('patients.prescriptions')}</TabsTrigger>}
+          {canPrescriptions && <TabsTrigger value="prescriptions">{t('patients.prescriptions')}</TabsTrigger>}
           {canClinical && <TabsTrigger value="investigations">{t('patients.investigations')}</TabsTrigger>}
           {canClinical && <TabsTrigger value="documents">{t('patients.documents')}</TabsTrigger>}
           <TabsTrigger value="appointments">{t('patients.appointments')}</TabsTrigger>
+          {canFollowUps && <TabsTrigger value="follow-ups">{t('followUps.history')}</TabsTrigger>}
           {can('billing.read') && <TabsTrigger value="invoices">{t('patients.invoices')}</TabsTrigger>}
           <TabsTrigger value="consents">{t('patients.consents')}</TabsTrigger>
         </TabsList>
@@ -258,7 +316,7 @@ export function PatientDetailPage() {
             <VisitsTab patientId={p.id} />
           </TabsContent>
         )}
-        {canClinical && (
+        {canPrescriptions && (
           <TabsContent value="prescriptions">
             <PrescriptionsTab patientId={p.id} />
           </TabsContent>
@@ -279,6 +337,11 @@ export function PatientDetailPage() {
         <TabsContent value="appointments">
           <AppointmentsTab patientId={p.id} />
         </TabsContent>
+        {canFollowUps && (
+          <TabsContent value="follow-ups">
+            <FollowUpsTab patientId={p.id} />
+          </TabsContent>
+        )}
         {can('billing.read') && (
           <TabsContent value="invoices">
             <InvoicesTab patientId={p.id} />

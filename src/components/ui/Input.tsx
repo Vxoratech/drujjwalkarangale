@@ -2,6 +2,7 @@ import { forwardRef, type InputHTMLAttributes, type ReactNode, type SelectHTMLAt
 import { ChevronDown, Search, X } from 'lucide-react';
 import { useFieldControl } from '@/components/forms/FormField';
 import { cn } from '@/lib/cn';
+import { useI18n } from '@/locales/i18n';
 
 export const controlClasses = cn(
   'w-full rounded-md border border-line-strong bg-surface text-sm text-ink placeholder:text-ink-subtle',
@@ -84,9 +85,10 @@ export interface SearchInputProps extends Omit<InputProps, 'type' | 'onChange' |
 }
 
 export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(function SearchInput(
-  { value, onValueChange, clearLabel = 'Clear search', ...rest },
+  { value, onValueChange, clearLabel, ...rest },
   ref,
 ) {
+  const { t } = useI18n();
   return (
     <Input
       ref={ref}
@@ -97,7 +99,7 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
       leading={<Search />}
       trailing={
         value ? (
-          <button type="button" onClick={() => onValueChange('')} aria-label={clearLabel} className="rounded p-1 hover:bg-sage">
+          <button type="button" onClick={() => onValueChange('')} aria-label={clearLabel ?? t('common.clearSearch')} className="rounded p-1 hover:bg-sage">
             <X className="size-4" aria-hidden />
           </button>
         ) : null

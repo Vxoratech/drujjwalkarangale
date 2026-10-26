@@ -20,7 +20,7 @@ import { useClinic } from '@/features/clinic/ClinicProvider';
 import { useDoctors } from '@/hooks/useDoctors';
 import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { isPermissionError, toUserMessage } from '@/lib/errors';
-import { formatDate, formatDateTime, fullName, todayISO } from '@/lib/formatters';
+import { ageLabel, formatDate, formatDateTime, fullName, todayISO } from '@/lib/formatters';
 import { qk } from '@/lib/query/keys';
 import { useFieldError } from '@/lib/validation/useFieldError';
 import { useI18n } from '@/locales/i18n';
@@ -53,11 +53,12 @@ export function PrescriptionEditorPage() {
   const navigate = useNavigate();
   const { t } = useI18n();
   const user = useCurrentUser();
-  const { clinicId, can } = useClinic();
+  const { clinicId, clinic, can } = useClinic();
   const { names } = useDoctors();
   const queryClient = useQueryClient();
   const fieldError = useFieldError();
   const [confirmIssue, setConfirmIssue] = useState(false);
+  const [reviewed, setReviewed] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [reviseOpen, setReviseOpen] = useState(false);
   const [reviseReason, setReviseReason] = useState('');
@@ -82,8 +83,11 @@ export function PrescriptionEditorPage() {
 
   useEffect(() => {
     if (rx) form.reset(toPrescriptionForm(rx));
-    else if (patient.data) form.reset(toPrescriptionForm(null, patient.data.preferred_locale));
-  }, [rx, patient.data, form]);
+    else if (patient.data) {
+      const pref = clinic.settings.prescription_language;
+      form.reset(toPrescriptionForm(null, pref === 'en' || pref === 'mr' ? pref : patient.data.preferred_locale));
+    }
+  }, [rx, patient.data, form, clinic.settings.prescription_language]);
 
   useUnsavedChangesGuard(form.formState.isDirty && editable, t('consultations.unsaved'));
 
@@ -97,7 +101,7 @@ export function PrescriptionEditorPage() {
   const save = useMutation({
     mutationFn: async ({ values, issue }: { values: PrescriptionFormValues; issue: boolean }) => {
       const id = await savePrescriptionDraft(clinicId, { patient_id: patientId!, consultation_id: consultationId, header: toHeaderInput(values) }, toItemInputs(values), prescriptionId);
-      if (issue) await issuePrescription(id);
+      if (issue) await issuePrescription(id, reviewed);
       return { id, issue };
     },
     onSuccess: async ({ id, issue }) => {
@@ -339,7 +343,43 @@ export function PrescriptionEditorPage() {
           </fieldset>
         </form>
 
-        <aside>
+        <aside className="space-y-4">
+          <Card>
+            <CardHeader title={t('prescriptions.context')} />
+            <CardBody>
+              <dl className="space-y-2 text-sm">
+                <div>
+                  <dt className="text-xs text-ink-muted">{t('billing.patient')}</dt>
+                  <dd className="font-medium">
+                    {fullName(p)} <span className="tabular text-xs text-ink-muted">{p.patient_code}</span>
+                  </dd>
+                  <dd className="text-xs text-ink-muted">{[ageLabel(p) !== '—' ? `${ageLabel(p)} y` : null, t(`gender.${p.gender}`), p.preferred_locale === 'mr' ? 'मराठी' : 'English'].filter(Boolean).join(' · ')}</dd>
+                </div>
+                {consultationId && (
+                  <div>
+                    <dt className="text-xs text-ink-muted">{t('consultations.title')}</dt>
+                    <dd>
+                      <Link to={`/consultations/${consultationId}`} className="text-forest hover:underline">
+                        {t('common.view')}
+                      </Link>
+                    </dd>
+                  </div>
+                )}
+                <div>
+                  <dt className="text-xs text-ink-muted">{t('appointments.doctor')}</dt>
+                  <dd>{names.get(rx?.doctor_id ?? user.id) ?? '—'}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-ink-muted">{t('prescriptions.reference')}</dt>
+                  <dd className="tabular">{rx?.prescription_no ?? t('prescriptions.assignedOnIssue')}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-ink-muted">{t('billing.date')}</dt>
+                  <dd className="tabular">{formatDate(rx?.issued_at ?? rx?.created_at ?? todayISO())}</dd>
+                </div>
+              </dl>
+            </CardBody>
+          </Card>
           <Card>
             <CardHeader title={t('prescriptions.revisions')} />
             <CardBody>
@@ -369,13 +409,19 @@ export function PrescriptionEditorPage() {
 
       <ConfirmDialog
         open={confirmIssue}
-        onOpenChange={setConfirmIssue}
+        onOpenChange={(o) => {
+          setConfirmIssue(o);
+          if (!o) setReviewed(false);
+        }}
         title={t('prescriptions.issueConfirmTitle')}
         body={t('prescriptions.issueConfirmBody')}
         confirmLabel={t('prescriptions.issue')}
         cancelLabel={t('common.cancel')}
+        confirmDisabled={!reviewed}
         onConfirm={() => submit(true)()}
-      />
+      >
+        <Checkbox label={t('prescriptions.clinicianReview')} description={t('prescriptions.clinicianReviewHint')} checked={reviewed} onChange={(ev) => setReviewed(ev.target.checked)} />
+      </ConfirmDialog>
       <ConfirmDialog
         open={reviseOpen}
         onOpenChange={setReviseOpen}

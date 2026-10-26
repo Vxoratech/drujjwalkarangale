@@ -79,7 +79,7 @@ function OrderDialog({ open, onOpenChange, patientId, consultationId }: { open: 
     >
       <form id="order-investigation" noValidate className="space-y-4" onSubmit={form.handleSubmit((v) => mutation.mutate(v))}>
         <FormField label={t('investigations.testName')} error={fieldError(form.formState.errors.test_name)} required>
-          <Input placeholder="e.g. CBC, Lipid profile, X-ray knee" {...form.register('test_name')} />
+          <Input placeholder={t('investigations.testPlaceholder')} {...form.register('test_name')} />
         </FormField>
         <FormField label={t('investigations.category')}>
           <Select options={(['laboratory', 'imaging', 'other'] as const).map((c) => ({ value: c, label: t(`investigationCategory.${c}`) }))} {...form.register('category')} />

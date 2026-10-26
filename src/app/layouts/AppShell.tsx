@@ -24,7 +24,7 @@ function SidebarNav({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?
   const { t } = useI18n();
   const { can } = useClinic();
   return (
-    <nav aria-label="Main" className="flex-1 space-y-6 overflow-y-auto px-3 py-4">
+    <nav aria-label={t('nav.main')} className="flex-1 space-y-6 overflow-y-auto px-3 py-4">
       {NAV_SECTIONS.map((section) => {
         const items = section.items.filter((i) => can(i.requirement));
         if (items.length === 0) return null;
@@ -127,7 +127,7 @@ function NotificationsMenu() {
 }
 
 function UserMenu() {
-  const { t, locale, setLocale } = useI18n();
+  const { t, locale, setLocale, bilingual, setBilingualChoice } = useI18n();
   const user = useCurrentUser();
   const { roles, memberships, clinicId, switchClinic } = useClinic();
   const navigate = useNavigate();
@@ -136,7 +136,7 @@ function UserMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button type="button" className="flex items-center gap-2 rounded-md py-1 pl-1 pr-2 hover:bg-sage/70" aria-label={`${name} — account menu`}>
+        <button type="button" className="flex items-center gap-2 rounded-md py-1 pl-1 pr-2 hover:bg-sage/70" aria-label={t('nav.accountMenu', { name })}>
           <Avatar name={name} size="sm" tone="gold" />
           <span className="hidden text-left leading-tight md:block">
             <span className="block max-w-[10rem] truncate text-sm font-medium">{name}</span>
@@ -156,6 +156,9 @@ function UserMenu() {
         </DropdownMenuItem>
         <DropdownMenuItem icon={locale === 'mr' ? <Check /> : <Languages />} onSelect={() => setLocale('mr')}>
           मराठी
+        </DropdownMenuItem>
+        <DropdownMenuItem icon={bilingual ? <Check /> : <Languages />} onSelect={() => setBilingualChoice(!bilingual)}>
+          {t('common.bilingualLabels')}
         </DropdownMenuItem>
         {memberships.length > 1 && (
           <>
@@ -218,7 +221,7 @@ export function AppShell() {
   return (
     <div className="min-h-dvh bg-ivory">
       <a href="#main" className="sr-only z-toast rounded bg-surface px-3 py-2 focus:not-sr-only focus:fixed focus:left-3 focus:top-3">
-        Skip to content
+        {t('nav.skipToContent')}
       </a>
 
       {/* Desktop sidebar */}
@@ -262,7 +265,7 @@ export function AppShell() {
       <div className={cn('flex min-h-dvh flex-col transition-[padding] duration-base', collapsed ? 'lg:pl-[var(--layout-sidebar-collapsed)]' : 'lg:pl-[var(--layout-sidebar)]')}>
         <header className="no-print sticky top-0 z-sticky flex h-header items-center gap-2 border-b border-line bg-surface/95 px-3 backdrop-blur supports-[backdrop-filter]:bg-surface/85 sm:px-4">
           <IconButton className="lg:hidden" label={t('nav.openMenu')} icon={<Menu />} onClick={() => setMobileOpen(true)} />
-          <Link to="/" className="flex min-w-0 items-center gap-2 rounded lg:hidden" aria-label="Vaidyora home">
+          <Link to="/" className="flex min-w-0 items-center gap-2 rounded lg:hidden" aria-label={t('nav.home')}>
             <BrandMark className="size-7" />
           </Link>
           <div className="min-w-0 flex-1">

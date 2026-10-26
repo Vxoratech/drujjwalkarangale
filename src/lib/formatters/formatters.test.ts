@@ -12,6 +12,7 @@ import {
   maskPhone,
   rupeesToPaise,
   setDisplayTimeZone,
+  startOfWeekISO,
   todayISO,
 } from './index';
 
@@ -58,6 +59,11 @@ describe('formatters', () => {
     } finally {
       setDisplayTimeZone(null);
     }
+  });
+
+  it('finds the Monday of a week', () => {
+    expect(startOfWeekISO('2026-10-25')).toBe('2026-10-19'); // Sunday → previous Monday
+    expect(startOfWeekISO('2026-10-26')).toBe('2026-10-26');
   });
 
   it('computes age', () => {

@@ -1,3 +1,4 @@
+import { translateCurrent, type TranslationKey } from '@/locales/i18n';
 /**
  * Convert backend errors into safe, user-facing messages.
  * Raw database messages can contain record values, so only known messages
@@ -48,27 +49,33 @@ const SAFE_MESSAGES: readonly RegExp[] = [
   /^No pending invitation$/,
 ];
 
-const BY_CODE: Record<string, string> = {
-  '42501': 'You do not have permission to do this.',
-  '23505': 'This record already exists.',
-  '23503': 'This refers to a record that no longer exists or belongs elsewhere.',
-  '23514': 'Some values are not valid. Please review the form.',
-  '23P01': 'This time slot overlaps another appointment for the same doctor.',
-  P0002: 'The record could not be found.',
-  PGRST116: 'The record could not be found or you do not have access to it.',
+
+const BY_CODE: Record<string, TranslationKey> = {
+  '42501': 'errors.permission',
+  '23505': 'errors.duplicate',
+  '23503': 'errors.reference',
+  '23514': 'errors.invalid',
+  '23P01': 'errors.overlap',
+  P0002: 'errors.notFound',
+  PGRST116: 'errors.notFoundOrDenied',
 };
 
-export function toUserMessage(error: unknown, fallback = 'Something went wrong. Please try again.'): string {
-  if (!error || typeof error !== 'object') return fallback;
+/**
+ * Server-raised business messages (SAFE_MESSAGES) are shown as written; generic
+ * codes and fallbacks are translated into the active language.
+ */
+export function toUserMessage(error: unknown, fallback?: string): string {
+  const generic = fallback ?? translateCurrent('errors.generic');
+  if (!error || typeof error !== 'object') return generic;
   const e = error as BackendError;
   const message = e.message?.trim();
   if (message && SAFE_MESSAGES.some((re) => re.test(message))) {
     return message.endsWith('.') ? message : `${message}.`;
   }
-  if (e.code && BY_CODE[e.code]) return BY_CODE[e.code]!;
-  if (message && /fetch|network/i.test(message)) return 'Unable to reach the server. Check your connection.';
-  if (message?.includes('row-level security')) return BY_CODE['42501']!;
-  return fallback;
+  if (e.code && BY_CODE[e.code]) return translateCurrent(BY_CODE[e.code]!);
+  if (message && /fetch|network/i.test(message)) return translateCurrent('errors.network');
+  if (message?.includes('row-level security')) return translateCurrent('errors.permission');
+  return generic;
 }
 
 /** Expired, missing or revoked JWT (PostgREST PGRST301/PGRST302, HTTP 401). */

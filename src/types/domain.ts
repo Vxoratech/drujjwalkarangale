@@ -44,7 +44,7 @@ export interface Clinic {
   status_reason: string | null;
   brand_accent: string | null;
   audit_retention_days: number;
-  settings: Record<string, unknown>;
+  settings: ClinicSettings;
 }
 
 export interface Branch {
@@ -200,6 +200,8 @@ export interface Consultation {
   height_cm: number | null;
   spo2_percent: number | null;
   clinical_findings: string | null;
+  pain_details: string | null;
+  doctor_notes: string | null;
   assessment: string | null;
   diagnosis: string | null;
   ayurvedic_diagnosis: string | null;
@@ -243,6 +245,10 @@ export interface AyurvedicExamination {
   lifestyle: string | null;
   general_examination: string | null;
   family_history: string | null;
+  family_history_maternal: string | null;
+  family_history_paternal: string | null;
+  family_history_self: string | null;
+  menstrual_history: string | null;
   custom_fields: Record<string, string | number | boolean | null>;
   notes: string | null;
 }
@@ -410,6 +416,100 @@ export interface Payment {
   paid_at: Timestamp;
   received_by: UUID | null;
   receipt_no: string | null;
+  settlement_reference: string | null;
+  reconciliation_note: string | null;
+  reconciled_at: Timestamp | null;
+  reconciled_by: UUID | null;
+}
+
+export interface PaymentWithContext extends Payment {
+  invoice: Pick<Invoice, 'id' | 'invoice_no'> | null;
+  patient: Pick<Patient, 'id' | 'first_name' | 'last_name' | 'patient_code'> | null;
+}
+
+export interface ConsultationAmendment {
+  id: UUID;
+  consultation_id: UUID;
+  author_id: UUID;
+  reason: string;
+  content: string;
+  created_at: Timestamp;
+}
+
+export interface AccessReview {
+  id: UUID;
+  reviewer_id: UUID;
+  member_count: number;
+  changes_made: boolean;
+  notes: string | null;
+  reviewed_at: Timestamp;
+}
+
+export interface ClinicSettings {
+  bilingual_labels?: boolean;
+  default_appointment_minutes?: number;
+  prescription_language?: 'patient' | 'en' | 'mr';
+  /** Optional consultation sections; absent = shown. */
+  consultation_sections?: Partial<Record<ConsultationSection, boolean>>;
+  /** Set by trusted seed/platform code only. */
+  demo?: boolean;
+}
+
+export const CONSULTATION_SECTIONS = ['pain', 'family_history', 'menstrual_history', 'dinacharya', 'general_examination', 'dosha_assessment', 'clinic_fields'] as const;
+export type ConsultationSection = (typeof CONSULTATION_SECTIONS)[number];
+
+export interface ClinicOverview {
+  patients_total: number;
+  patients_new: number;
+  appointments_today: number;
+  appointments_in_range: number;
+  appointments_no_show: number;
+  consultations_completed: number;
+  consultations_open: number;
+  follow_ups_pending: number;
+  follow_ups_overdue: number;
+  collected_paise: Paise;
+  refunded_paise: Paise;
+  outstanding_paise: Paise;
+  unreconciled_payments: number;
+}
+
+export interface TrendRow {
+  period: DateString;
+  new_patients: number;
+  appointments: number;
+  appointments_completed: number;
+  consultations_completed: number;
+  collected_paise: Paise;
+}
+
+export interface BranchMetric {
+  branch_id: UUID;
+  branch_name: string;
+  appointments: number;
+  appointments_completed: number;
+  no_shows: number;
+  consultations_completed: number;
+  invoiced_paise: Paise;
+  collected_paise: Paise;
+  outstanding_paise: Paise;
+}
+
+export interface DoctorOverview {
+  appointments_today: number;
+  waiting: number;
+  in_progress: number;
+  completed_today: number;
+  completed_this_month: number;
+  follow_ups_due: number;
+}
+
+export interface RecentPatient {
+  patient_id: UUID;
+  first_name: string;
+  last_name: string;
+  patient_code: string;
+  last_viewed_at: Timestamp;
 }
 
 export interface Refund {

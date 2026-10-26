@@ -1,5 +1,5 @@
-import { CalendarDays, IndianRupee, LayoutDashboard, LineChart, ScrollText, Settings, Stethoscope, Users, UsersRound, type LucideIcon } from 'lucide-react';
-import { CAN_VIEW_PATIENTS, CAN_VIEW_SCHEDULE, type PermissionRequirement } from '@/lib/permissions/permissions';
+import { CalendarDays, IndianRupee, LayoutDashboard, LineChart, Pill, ScrollText, Settings, Stethoscope, Users, UsersRound, type LucideIcon } from 'lucide-react';
+import { CAN_VIEW_PATIENTS, CAN_VIEW_PRESCRIPTIONS, CAN_VIEW_SCHEDULE, type PermissionRequirement } from '@/lib/permissions/permissions';
 import type { TranslationKey } from '@/locales/i18n';
 
 export interface NavItem {
@@ -29,6 +29,7 @@ export const NAV_SECTIONS: NavSection[] = [
     label: 'nav.sectionCare',
     items: [
       { to: '/consultations', label: 'nav.consultations', icon: Stethoscope, requirement: 'clinical.write' },
+      { to: '/prescriptions', label: 'nav.prescriptions', icon: Pill, requirement: CAN_VIEW_PRESCRIPTIONS, end: false },
       { to: '/billing', label: 'nav.billing', icon: IndianRupee, requirement: 'billing.read' },
       { to: '/reports', label: 'nav.reports', icon: LineChart, requirement: 'reports.read' },
     ],

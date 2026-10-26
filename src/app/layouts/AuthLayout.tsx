@@ -11,11 +11,9 @@ export function AuthLayout({ title, subtitle, children, footer }: { title: strin
         <BrandLockup tone="light" />
         <div className="relative z-[1] max-w-md">
           <p className="font-display text-4xl font-semibold leading-tight tracking-tight">{t('brand.tagline')}</p>
-          <p className="mt-4 text-base text-sage/80">
-            Patient records, Ashtavidha Pariksha, prescriptions and billing — designed for Ayurvedic practice in India.
-          </p>
+          <p className="mt-4 text-base text-sage/80">{t('auth.brandPanel')}</p>
         </div>
-        <p className="relative z-[1] text-xs text-sage/60">© {new Date().getFullYear()} Vxora Tech</p>
+        <p className="relative z-[1] text-xs text-sage/60">{t('brand.copyright', { year: new Date().getFullYear() })}</p>
         {/* Subtle botanical line motif */}
         <svg aria-hidden viewBox="0 0 400 400" className="absolute -bottom-24 -right-24 size-[28rem] text-gold/15">
           <g fill="none" stroke="currentColor" strokeWidth="1.2">

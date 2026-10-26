@@ -18,6 +18,10 @@ export function useFieldError() {
     if (msg === 'pastDate') return t('validation.pastDate');
     if (msg === 'pincode') return t('validation.pincode');
     if (msg === 'gstin') return t('validation.gstin');
+    if (msg === 'bpBoth') return t('validation.bpBoth');
+    if (msg === 'bpOrder') return t('validation.bpOrder');
+    if (msg === 'dobOrAge') return t('validation.dobOrAge');
+    if (msg === 'slugFormat') return t('validation.slugFormat');
     switch (error.type) {
       case 'too_small':
         return msg.includes('at least 1 character') || msg.includes('Required') ? t('validation.required') : t('validation.tooShort', { min: /\d+/.exec(msg)?.[0] ?? '' });

@@ -4,6 +4,7 @@ import { useCurrentUser } from '@/features/auth/AuthProvider';
 import { qk } from '@/lib/query/keys';
 import { satisfies, type Permission, type PermissionRequirement } from '@/lib/permissions/permissions';
 import { setDisplayTimeZone } from '@/lib/formatters';
+import { useI18n } from '@/locales/i18n';
 import { fetchClinic, fetchMemberships, fetchPermissions, logSessionEvent } from '@/services/clinic';
 import type { AppRole, Clinic, Membership } from '@/types/domain';
 
@@ -73,9 +74,13 @@ export function useClinicGate(): ClinicGateState {
   });
   const clinic = useQuery({ queryKey: qk.clinic(clinicId ?? ''), queryFn: () => fetchClinic(clinicId!), enabled: Boolean(clinicId) && usable });
 
+  const { setBilingualDefault } = useI18n();
   useEffect(() => {
     setDisplayTimeZone(clinic.data?.timezone);
   }, [clinic.data?.timezone]);
+  useEffect(() => {
+    setBilingualDefault(Boolean(clinic.data?.settings.bilingual_labels));
+  }, [clinic.data?.settings.bilingual_labels, setBilingualDefault]);
 
   useEffect(() => {
     if (clinicId && usable && !loggedSelections.has(clinicId)) {

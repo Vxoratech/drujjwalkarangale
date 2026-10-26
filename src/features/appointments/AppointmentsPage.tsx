@@ -11,7 +11,9 @@ import { DateInput, Select } from '@/components/ui/Input';
 import { PageHeader, Toolbar } from '@/components/ui/PageHeader';
 import { useClinic } from '@/features/clinic/ClinicProvider';
 import { useDoctors } from '@/hooks/useDoctors';
-import { addDaysISO, formatLongDate, formatTime, fullName, istDayRange, todayISO } from '@/lib/formatters';
+import { addDaysISO, formatLongDate, formatTime, fullName, istDayRange, startOfWeekISO, todayISO } from '@/lib/formatters';
+import { SegmentedControl } from '@/components/ui/Tabs';
+import { WeekView } from './WeekView';
 import { qk } from '@/lib/query/keys';
 import { useI18n } from '@/locales/i18n';
 import { listAppointments } from '@/services/appointments';
@@ -28,6 +30,7 @@ export function AppointmentsPage() {
   const doctorId = params.get('doctor') ?? '';
   const status = (params.get('status') ?? '') as AppointmentStatus | '';
   const [bookOpen, setBookOpen] = useState(params.get('book') === '1');
+  const view = (params.get('view') === 'week' ? 'week' : 'day') as 'day' | 'week';
   const showAllDoctors = can('appointments.read_all');
 
   function update(key: string, value: string) {
@@ -39,8 +42,10 @@ export function AppointmentsPage() {
     setParams(next, { replace: true });
   }
 
-  const range = istDayRange(date);
+  const weekStart = startOfWeekISO(date);
+  const range = view === 'week' ? { from: istDayRange(weekStart).from, to: istDayRange(addDaysISO(weekStart, 6)).to } : istDayRange(date);
   const listParams = { from: range.from, to: range.to, doctorId: doctorId || undefined, statuses: status ? [status] : undefined };
+  const step = view === 'week' ? 7 : 1;
   const query = useQuery({ queryKey: qk.appointments(clinicId, listParams), queryFn: () => listAppointments(clinicId, listParams) });
 
   return (
@@ -59,9 +64,19 @@ export function AppointmentsPage() {
       <Card>
         <Toolbar>
           <div className="flex items-center gap-1">
-            <IconButton label={t('appointments.previousDay')} icon={<ChevronLeft />} onClick={() => update('date', addDaysISO(date, -1))} />
+            <SegmentedControl
+              label={t('appointments.view')}
+              value={view}
+              onChange={(v) => update('view', v === 'week' ? 'week' : '')}
+              options={[
+                { value: 'day', label: t('appointments.dayView') },
+                { value: 'week', label: t('appointments.weekView') },
+              ]}
+              className="mr-2"
+            />
+            <IconButton label={view === 'week' ? t('appointments.previousWeek') : t('appointments.previousDay')} icon={<ChevronLeft />} onClick={() => update('date', addDaysISO(date, -step))} />
             <DateInput aria-label={t('appointments.date')} value={date} onChange={(e) => update('date', e.target.value)} className="w-auto" />
-            <IconButton label={t('appointments.nextDay')} icon={<ChevronRight />} onClick={() => update('date', addDaysISO(date, 1))} />
+            <IconButton label={view === 'week' ? t('appointments.nextWeek') : t('appointments.nextDay')} icon={<ChevronRight />} onClick={() => update('date', addDaysISO(date, step))} />
             {date !== todayISO() && (
               <Button variant="ghost" size="sm" onClick={() => update('date', '')}>
                 {t('common.today')}
@@ -91,6 +106,16 @@ export function AppointmentsPage() {
             </div>
           </div>
         </Toolbar>
+        {view === 'week' ? (
+          query.isLoading ? (
+            <SkeletonRows rows={6} />
+          ) : query.isError ? (
+            <ErrorState onRetry={() => void query.refetch()} />
+          ) : (
+            <WeekView weekStart={weekStart} appointments={query.data!} doctorNames={showAllDoctors ? names : undefined} onPickDay={(d) => { update('date', d); update('view', ''); }} />
+          )
+        ) : (
+        <>
         <h2 className="border-b border-line px-5 py-3 font-display text-sm font-semibold text-ink-muted">{formatLongDate(date)}</h2>
         {query.isLoading ? (
           <SkeletonRows rows={6} />
@@ -118,6 +143,8 @@ export function AppointmentsPage() {
               </li>
             ))}
           </ul>
+        )}
+        </>
         )}
       </Card>
       <AppointmentFormModal

@@ -101,6 +101,13 @@ export function addDaysISO(date: DateString, days: number): DateString {
   return d.toISOString().slice(0, 10);
 }
 
+/** Monday of the week containing `date` (weeks start on Monday in India). */
+export function startOfWeekISO(date: DateString): DateString {
+  const d = parseDateOnly(date);
+  const dow = (d.getUTCDay() + 6) % 7;
+  return addDaysISO(date, -dow);
+}
+
 /** Start/end instants (ISO) of a calendar day in the clinic time zone. */
 export function istDayRange(date: DateString): { from: Timestamp; to: Timestamp } {
   const next = addDaysISO(date, 1);

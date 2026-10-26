@@ -22,6 +22,7 @@ import { useI18n } from '@/locales/i18n';
 import { fetchBranches, saveBranch, updateClinic } from '@/services/clinic';
 import type { Branch, Clinic } from '@/types/domain';
 import { ExamFieldsCard } from './ExamFieldsCard';
+import { PreferencesCard } from './PreferencesCard';
 import { SubscriptionCard } from './SubscriptionCard';
 
 const clinicSchema = z.object({
@@ -287,7 +288,8 @@ export function SettingsPage() {
         </Card>
         </div>
       </div>
-      <div className="mt-6">
+      <div className="mt-6 space-y-6">
+        <PreferencesCard />
         <ExamFieldsCard />
       </div>
       <BranchModal open={branchModal.open} branch={branchModal.branch} onOpenChange={(o) => setBranchModal((s) => ({ ...s, open: o }))} />

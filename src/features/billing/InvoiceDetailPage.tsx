@@ -326,7 +326,11 @@ export function InvoiceDetailPage() {
                       <div>
                         <p className="font-medium">
                           {t(`paymentMethod.${p.method}`)}
-                          {p.receipt_no && <span className="tabular ml-2 text-xs font-normal text-ink-muted">{t('billing.receiptNo', { no: p.receipt_no })}</span>}
+                          {p.receipt_no && (
+                            <Link to={`/print/receipts/${p.id}`} target="_blank" rel="noopener" className="tabular ml-2 text-xs font-normal text-forest hover:underline">
+                              {t('billing.receiptNo', { no: p.receipt_no })}
+                            </Link>
+                          )}
                         </p>
                         <p className="tabular text-xs text-ink-muted">
                           {formatDateTime(p.paid_at)}

@@ -148,7 +148,7 @@ export function CreateInvoicePage() {
                     <dd className="tabular">{formatINR(totals.total)}</dd>
                   </div>
                 </dl>
-                {totals.total < 0 && <Alert tone="danger">Discount cannot exceed the invoice amount.</Alert>}
+                {totals.total < 0 && <Alert tone="danger">{t('billing.discountTooHigh')}</Alert>}
                 <p className="text-xs text-ink-muted">{t('billing.estimate')}</p>
                 <Button type="submit" fullWidth size="lg" loading={mutation.isPending} disabled={totals.total < 0}>
                   {t('billing.createInvoice')}

@@ -21,15 +21,15 @@ import { useDoctors } from '@/hooks/useDoctors';
 import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { cn } from '@/lib/cn';
 import { isPermissionError, toUserMessage } from '@/lib/errors';
-import { ageFromDob, formatDate, fullName, todayISO } from '@/lib/formatters';
+import { ageLabel, formatDate, formatDateTime, fullName, todayISO } from '@/lib/formatters';
 import { qk } from '@/lib/query/keys';
 import { useFieldError } from '@/lib/validation/useFieldError';
 import { useI18n, type TranslationKey } from '@/locales/i18n';
 import { getAppointment } from '@/services/appointments';
-import { finalizeConsultation, getConsultation, listExamFields, listPrescriptions, saveConsultation } from '@/services/clinical';
+import { addAmendment, finalizeConsultation, getConsultation, listAmendments, listConsultations, listExamFields, listPrescriptions, saveConsultation } from '@/services/clinical';
 import { getPatient } from '@/services/patients';
-import { AGNIS, AMA_LEVELS, BALAS, DOSHAS, KOSHTHAS, PRAKRITIS } from '@/types/domain';
-import { computeBmi, consultationSchema, toConsultationForm, toConsultationPayload, type ConsultationFormInput, type ConsultationFormValues } from './consultationSchema';
+import { AGNIS, AMA_LEVELS, BALAS, DOSHAS, KOSHTHAS, PRAKRITIS, type ConsultationSection } from '@/types/domain';
+import { computeBmi, consultationSchema, offersMenstrualHistory, toConsultationForm, toConsultationPayload, type ConsultationFormInput, type ConsultationFormValues } from './consultationSchema';
 
 const ASHTAVIDHA = ['nadi', 'mutra', 'mala', 'jihva', 'shabda', 'sparsha', 'drik', 'akriti'] as const;
 const LIFESTYLE = [
@@ -41,8 +41,6 @@ const LIFESTYLE = [
 const NARRATIVE = [
   ['dinacharya', 'exam.dinacharya'],
   ['lifestyle', 'exam.lifestyle'],
-  ['general_examination', 'exam.generalExamination'],
-  ['family_history', 'exam.familyHistory'],
 ] as const;
 
 function RxPanel({ consultationId, patientId, canWrite }: { consultationId: string; patientId: string; canWrite: boolean }) {
@@ -86,17 +84,136 @@ function RxPanel({ consultationId, patientId, canWrite }: { consultationId: stri
   );
 }
 
+/** Earlier visits of the same patient, for review before and during a consultation. */
+function PreviousVisits({ patientId, excludeId }: { patientId: string; excludeId?: string }) {
+  const { t } = useI18n();
+  const { clinicId } = useClinic();
+  const { names } = useDoctors();
+  const q = useQuery({ queryKey: qk.consultations(clinicId, { patientId }), queryFn: () => listConsultations(clinicId, { patientId }) });
+  const rows = (q.data ?? []).filter((v) => v.id !== excludeId).slice(0, 5);
+  return (
+    <Card>
+      <CardHeader title={t('history.previousVisits')} />
+      <CardBody>
+        {q.isLoading ? (
+          <p className="text-sm text-ink-muted">{t('common.loading')}</p>
+        ) : rows.length === 0 ? (
+          <p className="text-sm text-ink-muted">{t('history.noPreviousVisits')}</p>
+        ) : (
+          <ol className="space-y-3">
+            {rows.map((v) => (
+              <li key={v.id}>
+                <details className="group rounded-md border border-line px-3 py-2">
+                  <summary className="flex cursor-pointer list-none items-start justify-between gap-2 text-sm">
+                    <span className="min-w-0">
+                      <span className="tabular block text-xs text-ink-muted">
+                        {formatDate(v.visit_date)} · {names.get(v.doctor_id) ?? ''}
+                      </span>
+                      <span className="line-clamp-1 font-medium">{v.chief_complaint}</span>
+                    </span>
+                    <StatusBadge status={v.status} label={v.status === 'draft' ? t('consultations.draft') : t('consultations.final')} />
+                  </summary>
+                  <div className="mt-2 space-y-1 text-xs text-ink-muted">
+                    {[v.ayurvedic_diagnosis, v.diagnosis].filter(Boolean).length > 0 && <p>{[v.ayurvedic_diagnosis, v.diagnosis].filter(Boolean).join(' · ')}</p>}
+                    <Link to={`/consultations/${v.id}`} className="font-medium text-forest hover:underline">
+                      {t('common.view')}
+                    </Link>
+                  </div>
+                </details>
+              </li>
+            ))}
+          </ol>
+        )}
+      </CardBody>
+    </Card>
+  );
+}
+
+/** Append-only addenda for finalized consultations. */
+function AmendmentsPanel({ consultationId, canAmend }: { consultationId: string; canAmend: boolean }) {
+  const { t } = useI18n();
+  const { clinicId } = useClinic();
+  const { names } = useDoctors();
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState('');
+  const [content, setContent] = useState('');
+  const q = useQuery({ queryKey: [clinicId, 'amendments', consultationId, 'list'], queryFn: () => listAmendments(consultationId) });
+  const add = useMutation({
+    mutationFn: () => addAmendment(clinicId, { consultationId, reason: reason.trim(), content: content.trim() }),
+    onSuccess: async () => {
+      notify.success(t('history.amendmentAdded'));
+      setOpen(false);
+      setReason('');
+      setContent('');
+      await queryClient.invalidateQueries({ queryKey: [clinicId, 'amendments', consultationId] });
+      await queryClient.invalidateQueries({ queryKey: [clinicId, 'consultations'] });
+    },
+    onError: (e) => notify.error(e),
+  });
+  return (
+    <Card>
+      <CardHeader
+        title={t('history.amendments')}
+        actions={
+          canAmend && (
+            <Button size="sm" variant="secondary" leftIcon={<Plus className="size-4" />} onClick={() => setOpen(true)}>
+              {t('history.addAmendment')}
+            </Button>
+          )
+        }
+      />
+      <CardBody>
+        {(q.data ?? []).length === 0 ? (
+          <p className="text-sm text-ink-muted">{t('history.noAmendments')}</p>
+        ) : (
+          <ol className="space-y-3">
+            {q.data!.map((a) => (
+              <li key={a.id} className="border-l-2 border-gold pl-3 text-sm">
+                <p className="tabular text-xs text-ink-muted">
+                  {formatDateTime(a.created_at)} · {names.get(a.author_id) ?? ''}
+                </p>
+                <p className="font-medium">{a.reason}</p>
+                <p className="whitespace-pre-line">{a.content}</p>
+              </li>
+            ))}
+          </ol>
+        )}
+      </CardBody>
+      <ConfirmDialog
+        open={open}
+        onOpenChange={setOpen}
+        title={t('history.addAmendment')}
+        body={t('history.amendmentHint')}
+        confirmLabel={t('common.save')}
+        cancelLabel={t('common.cancel')}
+        confirmDisabled={!reason.trim() || !content.trim()}
+        onConfirm={() => add.mutateAsync()}
+      >
+        <FormField label={t('history.amendmentReason')} required>
+          <Input maxLength={300} value={reason} onChange={(ev) => setReason(ev.target.value)} />
+        </FormField>
+        <FormField label={t('history.amendmentContent')} required>
+          <Textarea rows={4} maxLength={5000} value={content} onChange={(ev) => setContent(ev.target.value)} />
+        </FormField>
+      </ConfirmDialog>
+    </Card>
+  );
+}
+
 export function ConsultationEditorPage() {
   const { consultationId } = useParams();
   const [search] = useSearchParams();
   const navigate = useNavigate();
-  const { t, locale } = useI18n();
+  const { t, tb, locale } = useI18n();
   const user = useCurrentUser();
   const { clinicId, can } = useClinic();
   const { names } = useDoctors();
   const queryClient = useQueryClient();
   const fieldError = useFieldError();
   const [confirmFinalize, setConfirmFinalize] = useState(false);
+  const { clinic } = useClinic();
+  const show = (section: ConsultationSection) => clinic.settings.consultation_sections?.[section] !== false;
   const examFields = useQuery({ queryKey: [clinicId, 'exam-fields'], queryFn: () => listExamFields(clinicId), staleTime: 5 * 60_000 });
 
   const bundle = useQuery({ queryKey: qk.consultation(clinicId, consultationId ?? ''), queryFn: () => getConsultation(clinicId, consultationId!), enabled: Boolean(consultationId) });
@@ -106,6 +223,11 @@ export function ConsultationEditorPage() {
   const appointment = useQuery({ queryKey: qk.appointment(clinicId, appointmentId ?? ''), queryFn: () => getAppointment(clinicId, appointmentId!), enabled: Boolean(appointmentId) && !consultationId });
 
   const c = bundle.data?.consultation;
+  const amendmentCount = useQuery({
+    queryKey: [clinicId, 'amendments', consultationId],
+    queryFn: async () => (await listAmendments(consultationId!)).length,
+    enabled: Boolean(consultationId) && c?.status === 'finalized',
+  });
   const readOnly = Boolean(c && (c.status === 'finalized' || c.doctor_id !== user.id)) || !can('clinical.write');
 
   const form = useForm<ConsultationFormInput, unknown, ConsultationFormValues>({ resolver: zodResolver(consultationSchema), defaultValues: toConsultationForm() });
@@ -152,7 +274,7 @@ export function ConsultationEditorPage() {
   if (!patientId || !patient.data) return <ErrorState message={t('states.notFoundBody')} />;
 
   const p = patient.data;
-  const age = ageFromDob(p.date_of_birth);
+  const age = ageLabel(p);
   const submit = (finalize: boolean) => form.handleSubmit((values) => save.mutateAsync({ values, finalize }));
   const choice = <T extends string>(values: readonly T[], prefix: string) => values.map((v) => ({ value: v, label: t(`${prefix}.${v}` as TranslationKey) }));
 
@@ -163,8 +285,9 @@ export function ConsultationEditorPage() {
         title={consultationId ? t('consultations.title') : t('consultations.new')}
         meta={
           <>
-            <PatientIdentity name={fullName(p)} code={p.patient_code} meta={[age !== null ? `${age} y` : null, t(`gender.${p.gender}`)].filter(Boolean).join(' · ')} />
+            <PatientIdentity name={fullName(p)} code={p.patient_code} meta={[age !== '—' ? `${age} y` : null, t(`gender.${p.gender}`), p.occupation].filter(Boolean).join(' · ')} />
             {c && <StatusBadge status={c.status} label={c.status === 'draft' ? t('consultations.draft') : t('consultations.final')} />}
+            {c && (amendmentCount.data ?? 0) > 0 && <Badge tone="gold">{t('consultations.amended')}</Badge>}
             {c && c.doctor_id !== user.id && <Badge tone="gold">{names.get(c.doctor_id)}</Badge>}
           </>
         }
@@ -202,23 +325,55 @@ export function ConsultationEditorPage() {
           <fieldset disabled={readOnly || save.isPending} className="space-y-6">
             <Card>
               <CardBody className="space-y-6 py-6">
-                <FormSection title={t('consultations.sectionHistory')}>
-                  <FormField label={t('consultations.chiefComplaint')} error={fieldError(e.chief_complaint)} required>
+                <FormSection title={tb('consultations.sectionHistory')}>
+                  <FormField label={tb('consultations.chiefComplaint')} error={fieldError(e.chief_complaint)} required>
                     <Textarea rows={2} {...register('chief_complaint')} />
                   </FormField>
+                  {show('pain') && (
+                    <FormField label={tb('history.vedanaVishesha')} hint={t('history.vedanaHint')} error={fieldError(e.pain_details)}>
+                      <Textarea rows={2} {...register('pain_details')} />
+                    </FormField>
+                  )}
                   <FormGrid>
-                    <FormField label={t('consultations.hpi')} error={fieldError(e.history_of_present_illness)}>
+                    <FormField label={tb('consultations.hpi')} error={fieldError(e.history_of_present_illness)}>
                       <Textarea rows={3} {...register('history_of_present_illness')} />
                     </FormField>
-                    <FormField label={t('consultations.pastHistory')} error={fieldError(e.past_history)}>
+                    <FormField label={tb('consultations.pastHistory')} error={fieldError(e.past_history)}>
                       <Textarea rows={3} {...register('past_history')} />
                     </FormField>
                   </FormGrid>
                 </FormSection>
 
+                {show('family_history') && (
+                  <FormSection title={tb('history.familyHistory')}>
+                    <FormGrid cols={3}>
+                      <FormField label={tb('history.maternal')} error={fieldError(e.exam?.family_history_maternal)}>
+                        <Textarea rows={2} {...register('exam.family_history_maternal')} />
+                      </FormField>
+                      <FormField label={tb('history.paternal')} error={fieldError(e.exam?.family_history_paternal)}>
+                        <Textarea rows={2} {...register('exam.family_history_paternal')} />
+                      </FormField>
+                      <FormField label={tb('history.self')} error={fieldError(e.exam?.family_history_self)}>
+                        <Textarea rows={2} {...register('exam.family_history_self')} />
+                      </FormField>
+                    </FormGrid>
+                    <FormField label={tb('history.familyOther')} error={fieldError(e.exam?.family_history)}>
+                      <Input {...register('exam.family_history')} />
+                    </FormField>
+                  </FormSection>
+                )}
+
+                {show('menstrual_history') && offersMenstrualHistory(p.gender) && (
+                  <FormSection title={tb('history.rajoItihas')} description={t('history.rajoHint')}>
+                    <FormField label={tb('history.rajoItihas')} hideLabel error={fieldError(e.exam?.menstrual_history)}>
+                      <Textarea rows={2} {...register('exam.menstrual_history')} />
+                    </FormField>
+                  </FormSection>
+                )}
+
                 <FormSection title={t('consultations.vitals')}>
                   <FormGrid cols={4}>
-                    <FormField label={t('consultations.pulse')} error={fieldError(e.pulse_bpm)}>
+                    <FormField label={tb('consultations.pulse')} error={fieldError(e.pulse_bpm)}>
                       <Input inputMode="numeric" className="tabular" {...register('pulse_bpm')} />
                     </FormField>
                     <FormField label={`${t('consultations.bp')} — ${t('consultations.systolic')}`} error={fieldError(e.bp_systolic)}>
@@ -227,16 +382,16 @@ export function ConsultationEditorPage() {
                     <FormField label={`${t('consultations.bp')} — ${t('consultations.diastolic')}`} error={fieldError(e.bp_diastolic)}>
                       <Input inputMode="numeric" className="tabular" {...register('bp_diastolic')} />
                     </FormField>
-                    <FormField label={t('consultations.temperature')} error={fieldError(e.temperature_c)}>
+                    <FormField label={tb('consultations.temperature')} error={fieldError(e.temperature_c)}>
                       <Input inputMode="decimal" className="tabular" {...register('temperature_c')} />
                     </FormField>
-                    <FormField label={t('consultations.weight')} error={fieldError(e.weight_kg)}>
+                    <FormField label={tb('consultations.weight')} error={fieldError(e.weight_kg)}>
                       <Input inputMode="decimal" className="tabular" {...register('weight_kg')} />
                     </FormField>
-                    <FormField label={t('consultations.height')} error={fieldError(e.height_cm)}>
+                    <FormField label={tb('consultations.height')} error={fieldError(e.height_cm)}>
                       <Input inputMode="decimal" className="tabular" {...register('height_cm')} />
                     </FormField>
-                    <FormField label={t('consultations.spo2')} error={fieldError(e.spo2_percent)}>
+                    <FormField label={tb('consultations.spo2')} error={fieldError(e.spo2_percent)}>
                       <Input inputMode="numeric" className="tabular" {...register('spo2_percent')} />
                     </FormField>
                     <div className="flex flex-col gap-1.5">
@@ -251,14 +406,14 @@ export function ConsultationEditorPage() {
             </Card>
 
             <Card>
-              <CardHeader title={t('exam.title')} />
+              <CardHeader title={tb('exam.title')} />
               <CardBody className="space-y-6 py-6">
                 <p className="flex items-start gap-2 rounded-md bg-ivory px-3 py-2 text-xs text-ink-muted">
                   <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
                   {t('exam.disclaimer')}
                 </p>
                 <FormGrid>
-                  <FormField label={t('exam.prakriti')}>
+                  <FormField label={tb('exam.prakriti')}>
                     <Select placeholder="—" options={choice(PRAKRITIS, 'prakriti')} {...register('exam.prakriti')} />
                   </FormField>
                   <Controller
@@ -287,7 +442,8 @@ export function ConsultationEditorPage() {
                     )}
                   />
                 </FormGrid>
-                <FormSection title={t('exam.doshaAssessment')}>
+                {show('dosha_assessment') && (
+                <FormSection title={tb('exam.doshaAssessment')}>
                   <FormGrid cols={3}>
                     {(
                       [
@@ -296,12 +452,13 @@ export function ConsultationEditorPage() {
                         ['kapha_score', 'exam.kaphaScore'],
                       ] as const
                     ).map(([name, label]) => (
-                      <FormField key={name} label={t(label)} error={fieldError(e.exam?.[name])}>
+                      <FormField key={name} label={tb(label)} error={fieldError(e.exam?.[name])}>
                         <Input type="number" min={0} max={10} step={1} inputMode="numeric" className="tabular" {...register(`exam.${name}`)} />
                       </FormField>
                     ))}
                   </FormGrid>
                 </FormSection>
+                )}
                 <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-4">
                   {(
                     [
@@ -316,46 +473,53 @@ export function ConsultationEditorPage() {
                       control={control}
                       name={`exam.${name}`}
                       render={({ field }) => (
-                        <RadioGroup name={name} legend={t(`exam.${name}`)} value={field.value || null} onChange={field.onChange} options={choice(values, name)} disabled={readOnly} />
+                        <RadioGroup name={name} legend={tb(`exam.${name}`)} value={field.value || null} onChange={field.onChange} options={choice(values, name)} disabled={readOnly} />
                       )}
                     />
                   ))}
                 </div>
-                <FormSection title={t('exam.ashtavidha')}>
+                <FormSection title={tb('exam.ashtavidha')}>
                   <FormGrid cols={4}>
                     {ASHTAVIDHA.map((k) => (
-                      <FormField key={k} label={t(`exam.${k}`)} error={fieldError(e.exam?.[k])}>
+                      <FormField key={k} label={tb(`exam.${k}`)} error={fieldError(e.exam?.[k])}>
                         <Input {...register(`exam.${k}`)} />
                       </FormField>
                     ))}
                   </FormGrid>
                   <FormGrid>
-                    <FormField label={t('exam.sara')}>
+                    <FormField label={tb('exam.sara')}>
                       <Input {...register('exam.sara')} />
                     </FormField>
-                    <FormField label={t('exam.satva')}>
+                    <FormField label={tb('exam.satva')}>
                       <Input {...register('exam.satva')} />
                     </FormField>
                   </FormGrid>
                 </FormSection>
-                <FormSection title={t('exam.lifestyleSection')}>
+                {show('general_examination') && (
+                  <FormField label={tb('exam.generalExamination')} error={fieldError(e.exam?.general_examination)}>
+                    <Textarea rows={2} {...register('exam.general_examination')} />
+                  </FormField>
+                )}
+                {show('dinacharya') && (
+                <FormSection title={tb('exam.lifestyleSection')}>
                   <FormGrid cols={4}>
                     {LIFESTYLE.map(([name, label]) => (
-                      <FormField key={name} label={t(label)} error={fieldError(e.exam?.[name])}>
+                      <FormField key={name} label={tb(label)} error={fieldError(e.exam?.[name])}>
                         <Input {...register(`exam.${name}`)} />
                       </FormField>
                     ))}
                   </FormGrid>
                   <FormGrid>
                     {NARRATIVE.map(([name, label]) => (
-                      <FormField key={name} label={t(label)} error={fieldError(e.exam?.[name])}>
+                      <FormField key={name} label={tb(label)} error={fieldError(e.exam?.[name])}>
                         <Textarea rows={2} {...register(`exam.${name}`)} />
                       </FormField>
                     ))}
                   </FormGrid>
                 </FormSection>
-                {(examFields.data ?? []).length > 0 && (
-                  <FormSection title={t('exam.clinicFields')}>
+                )}
+                {show('clinic_fields') && (examFields.data ?? []).length > 0 && (
+                  <FormSection title={tb('exam.clinicFields')}>
                     <FormGrid cols={3}>
                       {examFields.data!.map((f) => {
                         const label = `${(locale === 'mr' && f.label_mr) || f.label_en}${f.unit ? ` (${f.unit})` : ''}`;
@@ -378,7 +542,7 @@ export function ConsultationEditorPage() {
                     </FormGrid>
                   </FormSection>
                 )}
-                <FormField label={t('exam.notes')} error={fieldError(e.exam?.notes)}>
+                <FormField label={tb('exam.notes')} error={fieldError(e.exam?.notes)}>
                   <Textarea rows={2} {...register('exam.notes')} />
                 </FormField>
               </CardBody>
@@ -386,46 +550,54 @@ export function ConsultationEditorPage() {
 
             <Card>
               <CardBody className="space-y-6 py-6">
-                <FormSection title={t('consultations.sectionAssessment')}>
+                <FormSection title={tb('consultations.sectionAssessment')}>
                   <FormGrid>
-                    <FormField label={t('consultations.findings')} error={fieldError(e.clinical_findings)}>
+                    <FormField label={tb('consultations.findings')} error={fieldError(e.clinical_findings)}>
                       <Textarea rows={2} {...register('clinical_findings')} />
                     </FormField>
-                    <FormField label={t('consultations.assessment')} error={fieldError(e.assessment)}>
+                    <FormField label={tb('consultations.assessment')} error={fieldError(e.assessment)}>
                       <Textarea rows={2} {...register('assessment')} />
                     </FormField>
                   </FormGrid>
                   <FormGrid>
-                    <FormField label={t('consultations.ayurvedicDiagnosis')} error={fieldError(e.ayurvedic_diagnosis)}>
+                    <FormField label={tb('consultations.ayurvedicDiagnosis')} error={fieldError(e.ayurvedic_diagnosis)}>
                       <Input {...register('ayurvedic_diagnosis')} />
                     </FormField>
-                    <FormField label={t('consultations.diagnosis')} error={fieldError(e.diagnosis)}>
+                    <FormField label={tb('consultations.diagnosis')} error={fieldError(e.diagnosis)}>
                       <Input {...register('diagnosis')} />
                     </FormField>
                   </FormGrid>
-                  <FormField label={t('consultations.plan')} error={fieldError(e.treatment_plan)}>
+                  <FormField label={tb('consultations.plan')} error={fieldError(e.treatment_plan)}>
                     <Textarea rows={3} {...register('treatment_plan')} />
                   </FormField>
                   <FormGrid>
-                    <FormField label={t('consultations.pathya')} error={fieldError(e.pathya)}>
+                    <FormField label={tb('consultations.pathya')} error={fieldError(e.pathya)}>
                       <Textarea rows={3} {...register('pathya')} />
                     </FormField>
-                    <FormField label={t('consultations.apathya')} error={fieldError(e.apathya)}>
+                    <FormField label={tb('consultations.apathya')} error={fieldError(e.apathya)}>
                       <Textarea rows={3} {...register('apathya')} />
                     </FormField>
                   </FormGrid>
                   <div className="max-w-xs">
-                    <FormField label={t('consultations.followUp')} error={fieldError(e.follow_up_date)}>
+                    <FormField label={tb('consultations.followUp')} error={fieldError(e.follow_up_date)}>
                       <DateInput min={c?.visit_date ?? todayISO()} {...register('follow_up_date')} />
                     </FormField>
                   </div>
                 </FormSection>
+                <FormSection title={tb('history.doctorNotes')} description={t('history.doctorNotesHint')}>
+                  <FormField label={tb('history.doctorNotes')} hideLabel error={fieldError(e.doctor_notes)}>
+                    <Textarea rows={3} {...register('doctor_notes')} />
+                  </FormField>
+                </FormSection>
+                <p className="text-xs text-ink-muted">{t('history.requiredNote')}</p>
               </CardBody>
             </Card>
           </fieldset>
         </form>
 
         <aside className="space-y-4">
+          {c?.status === 'finalized' && <AmendmentsPanel consultationId={c.id} canAmend={c.doctor_id === user.id && can('clinical.write')} />}
+          <PreviousVisits patientId={p.id} excludeId={consultationId} />
           {consultationId ? (
             <>
               <RxPanel consultationId={consultationId} patientId={p.id} canWrite={!readOnly || (c?.doctor_id === user.id && can('clinical.write'))} />

@@ -22,6 +22,11 @@ describe('i18n', () => {
     }
   });
 
+  it('falls back to English when a Marathi string is missing or blank', () => {
+    const partial = { ...mr, common: { ...mr.common, save: '' } };
+    expect(translate(partial, 'common.save')).toBe('Save');
+  });
+
   it('interpolates parameters', () => {
     expect(translate(en, 'dashboard.remaining', { count: 3 })).toBe('3 remaining');
     expect(translate(mr, 'common.page', { page: 1, total: 4 })).toBe('पृष्ठ 1 / 4');

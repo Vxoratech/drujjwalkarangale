@@ -22,7 +22,7 @@ const TYPES = ['text', 'number', 'select', 'boolean'] as const;
 
 export const examFieldSchema = z
   .object({
-    key: z.string().trim().regex(/^[a-z][a-z0-9_]{1,40}$/, 'Use lowercase letters, digits and underscores.'),
+    key: z.string().trim().regex(/^[a-z][a-z0-9_]{1,40}$/, 'slugFormat'),
     label_en: z.string().trim().min(1).max(80),
     label_mr: z.string().trim().max(80).optional().or(z.literal('')),
     field_type: z.enum(TYPES),
@@ -105,7 +105,7 @@ function FieldModal({ field, open, onOpenChange }: { field: ExamFieldDefinition 
           <FormField label={t('settings.fieldLabelMr')} error={fieldError(e.label_mr)}>
             <Input lang="mr" {...form.register('label_mr')} />
           </FormField>
-          <FormField label={t('settings.fieldKey')} error={e.key?.message} required>
+          <FormField label={t('settings.fieldKey')} error={fieldError(e.key)} required>
             <Input className="font-mono" disabled={Boolean(field)} {...form.register('key')} />
           </FormField>
           <FormField label={t('settings.fieldType')}>

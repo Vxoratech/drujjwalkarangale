@@ -7,7 +7,11 @@ const optionalEnum = <T extends readonly [string, ...string[]]>(values: T) => z.
 
 export const consultationSchema = z
   .object({
+    // The only required field: every visit needs a recorded reason. Everything
+    // else depends on the case and is optional (see docs/FEATURES.md).
     chief_complaint: z.string().trim().min(1).max(2000),
+    pain_details: optionalText(2000),
+    doctor_notes: optionalText(5000),
     history_of_present_illness: optionalText(5000),
     past_history: optionalText(5000),
     pulse_bpm: optionalNumber(20, 250),
@@ -53,13 +57,22 @@ export const consultationSchema = z
       lifestyle: optionalText(1000),
       general_examination: optionalText(2000),
       family_history: optionalText(1000),
+      family_history_maternal: optionalText(1000),
+      family_history_paternal: optionalText(1000),
+      family_history_self: optionalText(1000),
+      menstrual_history: optionalText(1000),
       // Values for clinic-configured fields; validated server-side against definitions.
       custom_fields: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])),
       notes: optionalText(3000),
     }),
   })
-  .refine((v) => (v.bp_systolic === null) === (v.bp_diastolic === null), { path: ['bp_diastolic'], message: 'Enter both systolic and diastolic values.' })
-  .refine((v) => v.bp_systolic === null || v.bp_diastolic === null || v.bp_systolic > v.bp_diastolic, { path: ['bp_diastolic'], message: 'Diastolic must be lower than systolic.' });
+  .refine((v) => (v.bp_systolic === null) === (v.bp_diastolic === null), { path: ['bp_diastolic'], message: 'bpBoth' })
+  .refine((v) => v.bp_systolic === null || v.bp_diastolic === null || v.bp_systolic > v.bp_diastolic, { path: ['bp_diastolic'], message: 'bpOrder' });
+
+/** Whether a patient's record should offer रजोइतिहास (menstrual history). */
+export function offersMenstrualHistory(gender: string): boolean {
+  return gender !== 'male';
+}
 
 export type ConsultationFormInput = z.input<typeof consultationSchema>;
 export type ConsultationFormValues = z.output<typeof consultationSchema>;
@@ -69,6 +82,8 @@ const str = (v: string | number | null | undefined) => (v === null || v === unde
 export function toConsultationForm(c?: Consultation | null, e?: AyurvedicExamination | null, patientPrakriti?: string | null): ConsultationFormInput {
   return {
     chief_complaint: c?.chief_complaint ?? '',
+    pain_details: c?.pain_details ?? '',
+    doctor_notes: c?.doctor_notes ?? '',
     history_of_present_illness: c?.history_of_present_illness ?? '',
     past_history: c?.past_history ?? '',
     pulse_bpm: str(c?.pulse_bpm),
@@ -114,6 +129,10 @@ export function toConsultationForm(c?: Consultation | null, e?: AyurvedicExamina
       lifestyle: e?.lifestyle ?? '',
       general_examination: e?.general_examination ?? '',
       family_history: e?.family_history ?? '',
+      family_history_maternal: e?.family_history_maternal ?? '',
+      family_history_paternal: e?.family_history_paternal ?? '',
+      family_history_self: e?.family_history_self ?? '',
+      menstrual_history: e?.menstrual_history ?? '',
       custom_fields: e?.custom_fields ?? {},
       notes: e?.notes ?? '',
     },
@@ -132,6 +151,8 @@ export function toConsultationPayload(
       doctor_id: ctx.doctor_id,
       appointment_id: ctx.appointment_id,
       chief_complaint: v.chief_complaint,
+      pain_details: nul(v.pain_details),
+      doctor_notes: nul(v.doctor_notes),
       history_of_present_illness: nul(v.history_of_present_illness),
       past_history: nul(v.past_history),
       pulse_bpm: v.pulse_bpm,
@@ -178,6 +199,10 @@ export function toConsultationPayload(
       lifestyle: nul(v.exam.lifestyle),
       general_examination: nul(v.exam.general_examination),
       family_history: nul(v.exam.family_history),
+      family_history_maternal: nul(v.exam.family_history_maternal),
+      family_history_paternal: nul(v.exam.family_history_paternal),
+      family_history_self: nul(v.exam.family_history_self),
+      menstrual_history: nul(v.exam.menstrual_history),
       // Drop empty values so unset fields are not stored.
       custom_fields: Object.fromEntries(Object.entries(v.exam.custom_fields).filter(([, val]) => val !== '' && val !== null)),
       notes: nul(v.exam.notes),

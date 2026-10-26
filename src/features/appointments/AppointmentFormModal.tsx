@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -15,9 +15,11 @@ import { isoToIstParts, istDateTimeToISO, todayISO } from '@/lib/formatters';
 import { useFieldError } from '@/lib/validation/useFieldError';
 import { useI18n } from '@/locales/i18n';
 import { createAppointment, rescheduleAppointment } from '@/services/appointments';
+import { fetchBranches } from '@/services/clinic';
+import { qk } from '@/lib/query/keys';
 import { APPOINTMENT_SOURCES, APPOINTMENT_TYPES, type AppointmentWithPatient, type UUID } from '@/types/domain';
 
-const DURATIONS = [15, 20, 30, 45, 60, 90, 120] as const;
+const DURATIONS = [10, 15, 20, 30, 45, 60, 90, 120] as const;
 
 export const appointmentSchema = z.object({
   patient_id: z.string().uuid({ message: 'required' }),
@@ -27,6 +29,7 @@ export const appointmentSchema = z.object({
   duration: z.coerce.number().int().min(5).max(480),
   type: z.enum(APPOINTMENT_TYPES),
   source: z.enum(APPOINTMENT_SOURCES),
+  branch_id: z.string().uuid().optional().or(z.literal('')),
   reason: z.string().trim().max(500).optional().or(z.literal('')),
   notes: z.string().trim().max(1000).optional().or(z.literal('')),
 });
@@ -43,8 +46,10 @@ export interface AppointmentFormModalProps {
 
 export function AppointmentFormModal({ open, onOpenChange, appointment, defaultDate, defaultPatientId, defaultDoctorId }: AppointmentFormModalProps) {
   const { t } = useI18n();
-  const { clinicId } = useClinic();
+  const { clinicId, clinic, membership } = useClinic();
   const { doctors } = useDoctors();
+  const branches = useQuery({ queryKey: qk.branches(clinicId), queryFn: () => fetchBranches(clinicId), staleTime: 5 * 60_000 });
+  const activeBranches = (branches.data ?? []).filter((b) => b.is_active);
   const queryClient = useQueryClient();
   const fieldError = useFieldError();
 
@@ -64,6 +69,7 @@ export function AppointmentFormModal({ open, onOpenChange, appointment, defaultD
         duration: minutes,
         type: appointment.type,
         source: appointment.source,
+        branch_id: appointment.branch_id ?? '',
         reason: appointment.reason ?? '',
         notes: appointment.notes ?? '',
       });
@@ -73,20 +79,21 @@ export function AppointmentFormModal({ open, onOpenChange, appointment, defaultD
         doctor_id: defaultDoctorId ?? (doctors.length === 1 ? doctors[0]!.user_id : ''),
         date: defaultDate ?? todayISO(),
         time: '10:00',
-        duration: 30,
+        duration: clinic.settings.default_appointment_minutes ?? 30,
+        branch_id: membership.default_branch_id ?? '',
         type: 'new_visit',
         source: 'phone',
         reason: '',
         notes: '',
       });
     }
-  }, [open, appointment, defaultDate, defaultPatientId, defaultDoctorId, doctors, form]);
+  }, [open, appointment, defaultDate, defaultPatientId, defaultDoctorId, doctors, form, clinic.settings.default_appointment_minutes, membership.default_branch_id]);
 
   const mutation = useMutation({
     mutationFn: (v: AppointmentFormValues) => {
       const starts_at = istDateTimeToISO(v.date, v.time);
       const ends_at = new Date(new Date(starts_at).getTime() + v.duration * 60000).toISOString();
-      const payload = { doctor_id: v.doctor_id, starts_at, ends_at, type: v.type, reason: v.reason || null, notes: v.notes || null };
+      const payload = { doctor_id: v.doctor_id, starts_at, ends_at, type: v.type, reason: v.reason || null, notes: v.notes || null, branch_id: v.branch_id || null };
       return appointment
         ? rescheduleAppointment(clinicId, appointment.id, payload)
         : createAppointment(clinicId, { ...payload, source: v.source, patient_id: v.patient_id });
@@ -124,9 +131,16 @@ export function AppointmentFormModal({ open, onOpenChange, appointment, defaultD
         <FormField label={t('appointments.patient')} error={e.patient_id ? t('validation.required') : undefined} required>
           <Controller control={form.control} name="patient_id" render={({ field }) => <PatientPicker value={field.value || null} onChange={(id) => field.onChange(id ?? '')} disabled={Boolean(appointment)} />} />
         </FormField>
-        <FormField label={t('appointments.doctor')} error={e.doctor_id ? t('validation.required') : undefined} required>
-          <Select placeholder="—" options={doctors.map((d) => ({ value: d.user_id, label: d.full_name }))} {...form.register('doctor_id')} />
-        </FormField>
+        <FormGrid>
+          <FormField label={t('appointments.doctor')} error={e.doctor_id ? t('validation.required') : undefined} required>
+            <Select placeholder="—" options={doctors.map((d) => ({ value: d.user_id, label: d.full_name }))} {...form.register('doctor_id')} />
+          </FormField>
+          {activeBranches.length > 1 && (
+            <FormField label={t('appointments.branch')}>
+              <Select placeholder="—" options={activeBranches.map((b) => ({ value: b.id, label: b.name }))} {...form.register('branch_id')} />
+            </FormField>
+          )}
+        </FormGrid>
         <FormGrid cols={3}>
           <FormField label={t('appointments.date')} error={fieldError(e.date)} required>
             <DateInput {...form.register('date')} />
