@@ -1,0 +1,85 @@
+@import './tokens.css';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-ivory font-sans text-base text-ink antialiased;
+  }
+  h1, h2, h3, h4 {
+    @apply font-display text-ink;
+    letter-spacing: -0.01em;
+  }
+  :focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+  }
+  ::selection {
+    background: var(--color-gold-soft);
+  }
+}
+
+@layer utilities {
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+  .page-x {
+    padding-left: var(--space-page-x);
+    padding-right: var(--space-page-x);
+  }
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 14mm;
+  }
+  body {
+    background: white;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+}
+.print-only {
+  display: none;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Print: keep clinical rows and sections whole across A4 pages. */
+@media print {
+  table {
+    page-break-inside: auto;
+  }
+  thead {
+    display: table-header-group;
+  }
+  tr,
+  li,
+  dl > div,
+  section,
+  footer {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  article {
+    overflow: visible !important;
+  }
+  p,
+  td {
+    overflow-wrap: anywhere;
+    orphans: 3;
+    widows: 3;
+  }
+}
