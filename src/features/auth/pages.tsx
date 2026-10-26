@@ -14,7 +14,7 @@ import { toUserMessage } from '@/lib/errors';
 import { setPasswordSchema, signInSchema, signUpSchema } from '@/lib/validation/schemas';
 import { useFieldError } from '@/lib/validation/useFieldError';
 import { useI18n } from '@/locales/i18n';
-import { requestPasswordReset, signIn, signUp, updatePassword } from '@/services/auth';
+import { consumeSessionExpired, requestPasswordReset, signIn, signUp, updatePassword } from '@/services/auth';
 import { useAuth } from './AuthProvider';
 
 const PasswordInput = forwardRef<HTMLInputElement, ComponentProps<typeof Input>>(function PasswordInput(props, ref) {
@@ -39,6 +39,7 @@ export function SignInPage() {
   const location = useLocation();
   const fieldError = useFieldError();
   const [formError, setFormError] = useState<string | null>(null);
+  const [expired] = useState(consumeSessionExpired);
   const form = useForm<z.infer<typeof signInSchema>>({ resolver: zodResolver(signInSchema), defaultValues: { email: '', password: '' } });
   const from = (location.state as { from?: string } | null)?.from ?? '/';
 
@@ -67,6 +68,7 @@ export function SignInPage() {
       }
     >
       <form onSubmit={onSubmit} noValidate className="space-y-4">
+        {expired && !formError && <Alert tone="warning">{t('common.signedOutExpired')}</Alert>}
         {formError && <Alert tone="danger">{formError}</Alert>}
         <FormField label={t('auth.email')} error={fieldError(form.formState.errors.email)} required>
           <Input type="email" autoComplete="email" inputMode="email" leading={<Mail />} {...form.register('email')} />

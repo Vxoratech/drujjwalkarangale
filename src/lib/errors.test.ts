@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isPermissionError, toUserMessage } from './errors';
+import { isAuthError, isPermissionError, toUserMessage } from './errors';
 
 describe('toUserMessage', () => {
   it('passes through messages our SQL raises on purpose', () => {
@@ -30,5 +30,17 @@ describe('toUserMessage', () => {
     expect(isPermissionError({ code: '42501' })).toBe(true);
     expect(isPermissionError({ message: 'new row violates row-level security policy' })).toBe(true);
     expect(isPermissionError({ code: '23505' })).toBe(false);
+  });
+});
+
+describe('isAuthError', () => {
+  it('detects expired sessions', () => {
+    expect(isAuthError({ code: 'PGRST301', message: 'JWT expired' })).toBe(true);
+    expect(isAuthError({ status: 401 })).toBe(true);
+    expect(isAuthError({ code: '42501' })).toBe(false);
+  });
+
+  it('passes through plan-limit messages', () => {
+    expect(toUserMessage({ code: 'P0001', message: 'Your plan allows up to 2 doctors' })).toBe('Your plan allows up to 2 doctors.');
   });
 });

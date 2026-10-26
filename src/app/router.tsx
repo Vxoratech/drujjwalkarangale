@@ -4,6 +4,7 @@ import { ErrorState, FullPageSpinner } from '@/components/feedback/States';
 import { useAuth } from '@/features/auth/AuthProvider';
 import { ForgotPasswordPage, SetPasswordPage, SignInPage, SignUpPage } from '@/features/auth/pages';
 import { ClinicProvider, useClinicGate } from '@/features/clinic/ClinicProvider';
+import { ClinicPickerScreen, InvitationScreen, SuspendedScreen } from '@/features/clinic/GateScreens';
 import { OnboardingPage } from '@/features/clinic/OnboardingPage';
 import { RequirePermission } from '@/lib/permissions/Guards';
 import { CAN_VIEW_PATIENTS, CAN_VIEW_SCHEDULE, type PermissionRequirement } from '@/lib/permissions/permissions';
@@ -39,6 +40,9 @@ function ClinicGate() {
   if (gate.status === 'loading') return <FullPageSpinner />;
   if (gate.status === 'error') return <ErrorState message={toUserMessage(gate.error)} onRetry={gate.retry} />;
   if (gate.status === 'no_membership') return <OnboardingPage />;
+  if (gate.status === 'pick_clinic') return <ClinicPickerScreen memberships={gate.memberships} choose={gate.choose} />;
+  if (gate.status === 'invitation') return <InvitationScreen membership={gate.membership} others={gate.others} choose={gate.choose} />;
+  if (gate.status === 'suspended') return <SuspendedScreen membership={gate.membership} others={gate.others} choose={gate.choose} />;
   return (
     <ClinicProvider value={gate.value}>
       <Outlet />

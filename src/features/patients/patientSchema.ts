@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { optionalEmail, optionalPhone, optionalText, requiredText } from '@/lib/validation/schemas';
 import { todayISO } from '@/lib/formatters';
-import { BLOOD_GROUPS, PRAKRITIS, type Patient } from '@/types/domain';
+import { BLOOD_GROUPS, PATIENT_STATUSES, PRAKRITIS, type Patient } from '@/types/domain';
 import type { PatientInput } from '@/services/patients';
 
 export const patientSchema = z.object({
@@ -25,11 +25,18 @@ export const patientSchema = z.object({
   prakriti: z.enum(PRAKRITIS).optional().or(z.literal('')),
   assigned_doctor_id: z.string().uuid().optional().or(z.literal('')),
   preferred_locale: z.enum(['en', 'mr']),
-});
+  occupation: optionalText(120),
+  approx_age_years: z
+    .union([z.string(), z.number()])
+    .transform((v) => (v === '' ? null : Number(v)))
+    .refine((v) => v === null || (Number.isInteger(v) && v >= 0 && v <= 130), { message: 'range:0:130' }),
+  status: z.enum(PATIENT_STATUSES),
+}).refine((v) => !(v.date_of_birth && v.approx_age_years !== null), { path: ['approx_age_years'], message: 'Use either a date of birth or an approximate age.' });
 
-export type PatientFormValues = z.infer<typeof patientSchema>;
+export type PatientFormInput = z.input<typeof patientSchema>;
+export type PatientFormValues = z.output<typeof patientSchema>;
 
-export function toFormValues(p?: Patient | null): PatientFormValues {
+export function toFormValues(p?: Patient | null): PatientFormInput {
   return {
     first_name: p?.first_name ?? '',
     last_name: p?.last_name ?? '',
@@ -47,6 +54,9 @@ export function toFormValues(p?: Patient | null): PatientFormValues {
     prakriti: p?.prakriti ?? '',
     assigned_doctor_id: p?.assigned_doctor_id ?? '',
     preferred_locale: p?.preferred_locale ?? 'en',
+    occupation: p?.occupation ?? '',
+    approx_age_years: p?.approx_age_years ?? '',
+    status: p?.status ?? 'active',
   };
 }
 
@@ -70,5 +80,8 @@ export function toPatientInput(v: PatientFormValues): PatientInput {
     prakriti: blank(v.prakriti),
     assigned_doctor_id: blank(v.assigned_doctor_id),
     preferred_locale: v.preferred_locale,
+    occupation: blank(v.occupation),
+    approx_age_years: v.approx_age_years,
+    status: v.status,
   };
 }

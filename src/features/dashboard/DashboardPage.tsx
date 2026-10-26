@@ -10,15 +10,16 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { useCurrentUser } from '@/features/auth/AuthProvider';
 import { useClinic } from '@/features/clinic/ClinicProvider';
 import { useDoctors } from '@/hooks/useDoctors';
-import { formatINR, formatLongDate, formatNumber, formatTime, fullName, istDayRange, todayISO } from '@/lib/formatters';
+import { formatINR, formatLongDate, getDisplayTimeZone, formatNumber, formatTime, fullName, istDayRange, todayISO } from '@/lib/formatters';
 import { CAN_VIEW_SCHEDULE } from '@/lib/permissions/permissions';
 import { qk } from '@/lib/query/keys';
 import { useI18n } from '@/locales/i18n';
 import { listAppointments } from '@/services/appointments';
 import { fetchDashboardSummary } from '@/services/reports';
+import { FollowUpsCard } from '@/features/follow-ups/FollowUpsCard';
 
 function greetingKey(): 'dashboard.greetingMorning' | 'dashboard.greetingAfternoon' | 'dashboard.greetingEvening' {
-  const hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', hour: 'numeric', hour12: false }).format(new Date()));
+  const hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: getDisplayTimeZone(), hour: 'numeric', hour12: false }).format(new Date()));
   if (hour < 12) return 'dashboard.greetingMorning';
   if (hour < 17) return 'dashboard.greetingAfternoon';
   return 'dashboard.greetingEvening';
@@ -105,6 +106,7 @@ export function DashboardPage() {
         </section>
       )}
 
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
       {can(CAN_VIEW_SCHEDULE) && (
         <Card>
           <CardHeader
@@ -146,6 +148,8 @@ export function DashboardPage() {
           )}
         </Card>
       )}
+        {(can('appointments.manage') || can('clinical.write')) && <FollowUpsCard />}
+      </div>
     </>
   );
 }

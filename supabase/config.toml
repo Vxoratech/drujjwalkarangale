@@ -414,3 +414,6 @@ enabled = true
 
 [functions.invite-member]
 verify_jwt = true
+
+[functions.document-url]
+verify_jwt = true

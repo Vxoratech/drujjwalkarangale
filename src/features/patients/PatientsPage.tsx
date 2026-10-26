@@ -8,15 +8,16 @@ import { DataTable, type Column, type SortState } from '@/components/data-displa
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { SearchInput } from '@/components/ui/Input';
+import { SearchInput, Select } from '@/components/ui/Input';
 import { PageHeader, Toolbar } from '@/components/ui/PageHeader';
 import { useClinic } from '@/features/clinic/ClinicProvider';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useDoctors } from '@/hooks/useDoctors';
-import { ageFromDob, formatDate, fullName, maskPhone } from '@/lib/formatters';
+import { ageLabel, formatDate, fullName, maskPhone } from '@/lib/formatters';
 import { qk } from '@/lib/query/keys';
 import { useI18n } from '@/locales/i18n';
 import { listPatients, type PatientListItem, type PatientListParams } from '@/services/patients';
+import { PATIENT_STATUSES, type PatientStatus } from '@/types/domain';
 import { PatientFormDrawer } from './PatientFormDrawer';
 
 const PAGE_SIZE = 20;
@@ -31,6 +32,7 @@ export function PatientsPage() {
   const [page, setPage] = useState(1);
   const [sort, setSort] = useState<SortState>({ key: 'created_at', direction: 'desc' });
   const [formOpen, setFormOpen] = useState(params.get('new') === '1');
+  const [status, setStatus] = useState<PatientStatus | 'all'>('active');
   const debounced = useDebouncedValue(search);
 
   useEffect(() => setPage(1), [debounced]);
@@ -43,7 +45,7 @@ export function PatientsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debounced]);
 
-  const listParams: PatientListParams = { search: debounced, page, pageSize: PAGE_SIZE, sort: sort as PatientListParams['sort'] };
+  const listParams: PatientListParams = { search: debounced, page, pageSize: PAGE_SIZE, sort: sort as PatientListParams['sort'], status };
   const query = useQuery({ queryKey: qk.patients(clinicId, listParams), queryFn: () => listPatients(clinicId, listParams), placeholderData: keepPreviousData });
 
   const columns: Column<PatientListItem>[] = [
@@ -63,7 +65,7 @@ export function PatientsPage() {
       hideBelow: 'lg',
       cell: (p) => (
         <span className="tabular text-ink-muted">
-          {ageFromDob(p.date_of_birth) ?? '—'} · {t(`gender.${p.gender}`)}
+          {ageLabel(p)} · {t(`gender.${p.gender}`)}
         </span>
       ),
     },
@@ -91,6 +93,17 @@ export function PatientsPage() {
           <div className="w-full sm:max-w-sm">
             <SearchInput value={search} onValueChange={setSearch} placeholder={t('patients.searchPlaceholder')} aria-label={t('patients.searchPlaceholder')} clearLabel={t('common.clearFilters')} />
           </div>
+          <div className="sm:ml-auto sm:min-w-[10rem]">
+            <Select
+              aria-label={t('patients.statusFilter')}
+              value={status}
+              onChange={(e) => {
+                setStatus(e.target.value as PatientStatus | 'all');
+                setPage(1);
+              }}
+              options={[{ value: 'all', label: t('common.all') }, ...PATIENT_STATUSES.map((s) => ({ value: s, label: t(`patientStatus.${s}`) }))]}
+            />
+          </div>
         </Toolbar>
         {query.isLoading ? (
           <SkeletonRows rows={8} />
@@ -110,7 +123,7 @@ export function PatientsPage() {
             onRowClick={(p) => navigate(`/patients/${p.id}`)}
             mobileCard={(p) => (
               <div className="flex items-center justify-between gap-3">
-                <PatientIdentity name={fullName(p)} code={p.patient_code} meta={`${ageFromDob(p.date_of_birth) ?? '—'} · ${t(`gender.${p.gender}`)}`} />
+                <PatientIdentity name={fullName(p)} code={p.patient_code} meta={`${ageLabel(p)} · ${t(`gender.${p.gender}`)}`} />
                 <span className="tabular text-xs text-ink-muted">{maskPhone(p.phone)}</span>
               </div>
             )}

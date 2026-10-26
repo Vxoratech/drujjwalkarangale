@@ -15,7 +15,7 @@ import { isoToIstParts, istDateTimeToISO, todayISO } from '@/lib/formatters';
 import { useFieldError } from '@/lib/validation/useFieldError';
 import { useI18n } from '@/locales/i18n';
 import { createAppointment, rescheduleAppointment } from '@/services/appointments';
-import { APPOINTMENT_TYPES, type AppointmentWithPatient, type UUID } from '@/types/domain';
+import { APPOINTMENT_SOURCES, APPOINTMENT_TYPES, type AppointmentWithPatient, type UUID } from '@/types/domain';
 
 const DURATIONS = [15, 20, 30, 45, 60, 90, 120] as const;
 
@@ -26,7 +26,9 @@ export const appointmentSchema = z.object({
   time: z.string().regex(/^\d{2}:\d{2}$/),
   duration: z.coerce.number().int().min(5).max(480),
   type: z.enum(APPOINTMENT_TYPES),
+  source: z.enum(APPOINTMENT_SOURCES),
   reason: z.string().trim().max(500).optional().or(z.literal('')),
+  notes: z.string().trim().max(1000).optional().or(z.literal('')),
 });
 export type AppointmentFormValues = z.infer<typeof appointmentSchema>;
 
@@ -54,7 +56,17 @@ export function AppointmentFormModal({ open, onOpenChange, appointment, defaultD
     if (appointment) {
       const start = isoToIstParts(appointment.starts_at);
       const minutes = Math.round((new Date(appointment.ends_at).getTime() - new Date(appointment.starts_at).getTime()) / 60000);
-      form.reset({ patient_id: appointment.patient_id, doctor_id: appointment.doctor_id, date: start.date, time: start.time, duration: minutes, type: appointment.type, reason: appointment.reason ?? '' });
+      form.reset({
+        patient_id: appointment.patient_id,
+        doctor_id: appointment.doctor_id,
+        date: start.date,
+        time: start.time,
+        duration: minutes,
+        type: appointment.type,
+        source: appointment.source,
+        reason: appointment.reason ?? '',
+        notes: appointment.notes ?? '',
+      });
     } else {
       form.reset({
         patient_id: defaultPatientId ?? '',
@@ -63,7 +75,9 @@ export function AppointmentFormModal({ open, onOpenChange, appointment, defaultD
         time: '10:00',
         duration: 30,
         type: 'new_visit',
+        source: 'phone',
         reason: '',
+        notes: '',
       });
     }
   }, [open, appointment, defaultDate, defaultPatientId, defaultDoctorId, doctors, form]);
@@ -72,8 +86,10 @@ export function AppointmentFormModal({ open, onOpenChange, appointment, defaultD
     mutationFn: (v: AppointmentFormValues) => {
       const starts_at = istDateTimeToISO(v.date, v.time);
       const ends_at = new Date(new Date(starts_at).getTime() + v.duration * 60000).toISOString();
-      const payload = { doctor_id: v.doctor_id, starts_at, ends_at, type: v.type, reason: v.reason || null };
-      return appointment ? rescheduleAppointment(clinicId, appointment.id, payload) : createAppointment(clinicId, { ...payload, patient_id: v.patient_id });
+      const payload = { doctor_id: v.doctor_id, starts_at, ends_at, type: v.type, reason: v.reason || null, notes: v.notes || null };
+      return appointment
+        ? rescheduleAppointment(clinicId, appointment.id, payload)
+        : createAppointment(clinicId, { ...payload, source: v.source, patient_id: v.patient_id });
     },
     onSuccess: async () => {
       notify.success(appointment ? t('appointments.updated') : t('appointments.booked'));
@@ -122,11 +138,19 @@ export function AppointmentFormModal({ open, onOpenChange, appointment, defaultD
             <Select options={DURATIONS.map((d) => ({ value: String(d), label: t('appointments.minutes', { count: d }) }))} {...form.register('duration')} />
           </FormField>
         </FormGrid>
-        <FormField label={t('appointments.type')}>
-          <Select options={APPOINTMENT_TYPES.map((v) => ({ value: v, label: t(`appointmentType.${v}`) }))} {...form.register('type')} />
-        </FormField>
+        <FormGrid>
+          <FormField label={t('appointments.type')}>
+            <Select options={APPOINTMENT_TYPES.map((v) => ({ value: v, label: t(`appointmentType.${v}`) }))} {...form.register('type')} />
+          </FormField>
+          <FormField label={t('appointments.source')}>
+            <Select disabled={Boolean(appointment)} options={APPOINTMENT_SOURCES.map((v) => ({ value: v, label: t(`appointmentSource.${v}`) }))} {...form.register('source')} />
+          </FormField>
+        </FormGrid>
         <FormField label={t('appointments.reason')} error={fieldError(e.reason)}>
           <Textarea rows={2} {...form.register('reason')} />
+        </FormField>
+        <FormField label={t('appointments.notes')} error={fieldError(e.notes)}>
+          <Textarea rows={2} {...form.register('notes')} />
         </FormField>
       </form>
     </Modal>

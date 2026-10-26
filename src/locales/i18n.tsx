@@ -34,6 +34,13 @@ interface I18nContextValue {
 
 const I18nContext = createContext<I18nContextValue | null>(null);
 
+let activeLocale: Locale = 'en';
+
+/** Translate outside React (e.g. global query error handlers) using the active locale. */
+export function translateCurrent(key: TranslationKey, params?: TranslationParams): string {
+  return translate(DICTIONARIES[activeLocale], key, params);
+}
+
 function initialLocale(): Locale {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
@@ -48,6 +55,7 @@ export function I18nProvider({ children, defaultLocale }: { children: ReactNode;
   const [locale, setLocaleState] = useState<Locale>(() => defaultLocale ?? initialLocale());
 
   useEffect(() => {
+    activeLocale = locale;
     document.documentElement.lang = locale === 'mr' ? 'mr' : 'en-IN';
   }, [locale]);
 

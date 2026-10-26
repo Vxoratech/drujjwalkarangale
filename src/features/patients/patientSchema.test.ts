@@ -17,6 +17,11 @@ describe('patient form schema', () => {
     }
   });
 
+  it('accepts an approximate age only when the date of birth is unknown', () => {
+    expect(patientSchema.safeParse({ ...toFormValues(), first_name: 'Asha', approx_age_years: '45' }).success).toBe(true);
+    expect(patientSchema.safeParse({ ...toFormValues(), first_name: 'Asha', approx_age_years: '45', date_of_birth: '1980-01-01' }).success).toBe(false);
+  });
+
   it('maps blank optional fields to null', () => {
     const parsed = patientSchema.parse({ ...toFormValues(), first_name: ' Asha ', phone: '+91 98220 10001' });
     const input = toPatientInput(parsed);

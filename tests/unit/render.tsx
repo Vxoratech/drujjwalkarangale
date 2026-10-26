@@ -10,7 +10,8 @@ import type { Clinic, Membership } from '@/types/domain';
 const clinic: Clinic = {
   id: 'c1', name: 'Test Clinic', legal_name: null, phone: null, email: null, address_line: null, city: 'Pune', state: null,
   pincode: null, gstin: null, registration_no: null, logo_path: null, timezone: 'Asia/Kolkata', currency: 'INR',
-  default_locale: 'en', invoice_prefix: 'INV', consultation_fee_paise: 0,
+  default_locale: 'en', invoice_prefix: 'INV', consultation_fee_paise: 0, status: 'active', status_reason: null,
+  brand_accent: null, audit_retention_days: 2920, settings: {},
 };
 
 export function clinicContext(permissions: Permission[], roles: Membership['roles'] = ['admin']): ClinicContextValue {

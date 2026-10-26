@@ -38,3 +38,13 @@ export const paymentSchema = z.object({
 });
 export type PaymentFormInput = z.input<typeof paymentSchema>;
 export type PaymentFormValues = z.output<typeof paymentSchema>;
+
+export const refundSchema = z.object({
+  amount: rupees(10_000_000).refine((p) => p > 0, { message: 'range:0.01:10000000' }),
+  method: z.enum(PAYMENT_METHODS),
+  reason: z.string().trim().min(1).max(500),
+  payment_id: z.string().uuid().optional().or(z.literal('')),
+  reference: z.string().trim().max(80).optional().or(z.literal('')),
+});
+export type RefundFormInput = z.input<typeof refundSchema>;
+export type RefundFormValues = z.output<typeof refundSchema>;

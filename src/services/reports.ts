@@ -1,5 +1,5 @@
 import { getSupabase } from '@/lib/supabase/client';
-import type { AppointmentStatus, AuditLog, AppNotification, DashboardSummary, DateString, Paise, PaymentMethod, RevenueRow, UUID } from '@/types/domain';
+import type { AppointmentStatus, AuditEvent, AppNotification, DashboardSummary, DateString, Paise, PaymentMethod, RevenueRow, UUID } from '@/types/domain';
 import { unwrap, unwrapPage } from './_helpers';
 
 export async function fetchDashboardSummary(clinicId: UUID): Promise<DashboardSummary> {
@@ -8,7 +8,13 @@ export async function fetchDashboardSummary(clinicId: UUID): Promise<DashboardSu
 
 export async function fetchRevenueReport(clinicId: UUID, from: DateString, to: DateString): Promise<RevenueRow[]> {
   const rows = unwrap<RevenueRow[]>(await getSupabase().rpc('revenue_report', { p_clinic: clinicId, p_from: from, p_to: to }));
-  return rows.map((r) => ({ ...r, invoiced_paise: Number(r.invoiced_paise), collected_paise: Number(r.collected_paise), invoice_count: Number(r.invoice_count) }));
+  return rows.map((r) => ({
+    ...r,
+    invoiced_paise: Number(r.invoiced_paise),
+    collected_paise: Number(r.collected_paise),
+    refunded_paise: Number(r.refunded_paise),
+    invoice_count: Number(r.invoice_count),
+  }));
 }
 
 export async function fetchPaymentMethodReport(clinicId: UUID, from: DateString, to: DateString): Promise<{ method: PaymentMethod; total_paise: Paise; payment_count: number }[]> {
@@ -25,11 +31,12 @@ export async function fetchAppointmentStatusReport(clinicId: UUID, from: DateStr
   return rows.map((r) => ({ ...r, appointment_count: Number(r.appointment_count) }));
 }
 
-export async function listAuditLogs(clinicId: UUID, params: { page: number; pageSize: number; entityType?: string }) {
-  let q = getSupabase().from('audit_logs').select('*', { count: 'exact' }).eq('clinic_id', clinicId);
+export async function listAuditEvents(clinicId: UUID, params: { page: number; pageSize: number; entityType?: string; action?: string }) {
+  let q = getSupabase().from('audit_events').select('*', { count: 'exact' }).eq('clinic_id', clinicId);
   if (params.entityType) q = q.eq('entity_type', params.entityType);
+  if (params.action) q = q.eq('action', params.action);
   const from = (params.page - 1) * params.pageSize;
-  return unwrapPage<AuditLog>(await q.order('created_at', { ascending: false }).range(from, from + params.pageSize - 1));
+  return unwrapPage<AuditEvent>(await q.order('created_at', { ascending: false }).range(from, from + params.pageSize - 1));
 }
 
 export async function listNotifications(clinicId: UUID): Promise<AppNotification[]> {

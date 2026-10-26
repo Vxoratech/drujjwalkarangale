@@ -1,8 +1,8 @@
 import { getSupabase } from '@/lib/supabase/client';
-import type { Appointment, AppointmentStatus, AppointmentType, AppointmentWithPatient, Timestamp, UUID } from '@/types/domain';
+import type { Appointment, AppointmentSource, AppointmentStatus, AppointmentType, AppointmentWithPatient, Timestamp, UUID } from '@/types/domain';
 import { unwrap } from './_helpers';
 
-const COLUMNS = 'id, clinic_id, branch_id, patient_id, doctor_id, starts_at, ends_at, type, status, reason, cancellation_reason, patient:patients(id, first_name, last_name, patient_code, phone)';
+const COLUMNS = 'id, clinic_id, branch_id, patient_id, doctor_id, starts_at, ends_at, type, status, reason, source, notes, cancellation_reason, cancelled_at, patient:patients(id, first_name, last_name, patient_code, phone)';
 
 export interface AppointmentListParams {
   from: Timestamp;
@@ -36,14 +36,17 @@ export interface AppointmentInput {
   starts_at: Timestamp;
   ends_at: Timestamp;
   type: AppointmentType;
+  source: AppointmentSource;
   reason: string | null;
+  notes: string | null;
+  branch_id?: UUID | null;
 }
 
 export async function createAppointment(clinicId: UUID, input: AppointmentInput): Promise<Appointment> {
   return unwrap<Appointment>(await getSupabase().from('appointments').insert({ ...input, clinic_id: clinicId }).select('*').single());
 }
 
-export async function rescheduleAppointment(clinicId: UUID, id: UUID, input: Omit<AppointmentInput, 'patient_id'>): Promise<Appointment> {
+export async function rescheduleAppointment(clinicId: UUID, id: UUID, input: Omit<AppointmentInput, 'patient_id' | 'source'>): Promise<Appointment> {
   return unwrap<Appointment>(await getSupabase().from('appointments').update(input).eq('clinic_id', clinicId).eq('id', id).select('*').single());
 }
 

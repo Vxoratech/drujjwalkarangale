@@ -43,10 +43,10 @@ export function ReportsPage() {
 
   const rows = revenue.data ?? [];
   const totalInvoiced = rows.reduce((s, r) => s + r.invoiced_paise, 0);
-  const totalCollected = rows.reduce((s, r) => s + r.collected_paise, 0);
+  const totalCollected = rows.reduce((s, r) => s + r.collected_paise - r.refunded_paise, 0);
   const invoiceCount = rows.reduce((s, r) => s + r.invoice_count, 0);
   const maxDay = Math.max(0, ...rows.map((r) => Math.max(r.invoiced_paise, r.collected_paise)));
-  const activeDays = rows.filter((r) => r.invoiced_paise > 0 || r.collected_paise > 0);
+  const activeDays = rows.filter((r) => r.invoiced_paise > 0 || r.collected_paise > 0 || r.refunded_paise > 0);
   const maxMethod = Math.max(0, ...(methods.data ?? []).map((m) => m.total_paise));
   const maxStatus = Math.max(0, ...(statuses.data ?? []).map((s) => s.appointment_count));
 
@@ -108,7 +108,10 @@ export function ReportsPage() {
                     <tr key={r.day}>
                       <td className="tabular px-4 py-2.5">{formatDate(r.day)}</td>
                       <td className="tabular px-4 py-2.5 text-right">{formatINR(r.invoiced_paise)}</td>
-                      <td className="tabular px-4 py-2.5 text-right">{formatINR(r.collected_paise)}</td>
+                      <td className="tabular px-4 py-2.5 text-right">
+                        {formatINR(r.collected_paise - r.refunded_paise)}
+                        {r.refunded_paise > 0 && <span className="block text-xs text-danger">−{formatINR(r.refunded_paise)}</span>}
+                      </td>
                       <td className="hidden space-y-1 px-4 py-2.5 md:table-cell">
                         <Bar value={r.invoiced_paise} max={maxDay} />
                         <Bar value={r.collected_paise} max={maxDay} tone="gold" />

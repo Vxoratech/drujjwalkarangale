@@ -13,14 +13,16 @@ import { useClinic } from '@/features/clinic/ClinicProvider';
 import { InvestigationsPanel } from '@/features/investigations/InvestigationsPanel';
 import { useDoctors } from '@/hooks/useDoctors';
 import { isPermissionError, toUserMessage } from '@/lib/errors';
-import { ageFromDob, formatDate, formatDateTime, formatINR, fullName } from '@/lib/formatters';
+import { ageLabel, formatDate, formatDateTime, formatINR, fullName } from '@/lib/formatters';
 import { CAN_VIEW_CLINICAL } from '@/lib/permissions/permissions';
 import { qk } from '@/lib/query/keys';
 import { useI18n } from '@/locales/i18n';
 import { listPatientAppointments } from '@/services/appointments';
 import { listInvoices } from '@/services/billing';
 import { listConsultations, listPrescriptions } from '@/services/clinical';
-import { getPatient } from '@/services/patients';
+import { viewPatient } from '@/services/patients';
+import { DocumentsPanel } from '@/features/documents/DocumentsPanel';
+import { ConsentsPanel } from './ConsentsPanel';
 import { PermissionDenied } from '@/components/feedback/States';
 import { PatientFormDrawer } from './PatientFormDrawer';
 
@@ -148,25 +150,27 @@ export function PatientDetailPage() {
   const { clinicId, can } = useClinic();
   const { names } = useDoctors();
   const [editing, setEditing] = useState(false);
-  const query = useQuery({ queryKey: qk.patient(clinicId, patientId), queryFn: () => getPatient(clinicId, patientId) });
+  // view_patient records a 'patients.viewed' audit event server-side.
+  const query = useQuery({ queryKey: [clinicId, 'patient-view', patientId], queryFn: () => viewPatient(patientId) });
 
   if (query.isLoading) return <FullPageSpinner />;
   if (query.isError) {
-    if (isPermissionError(query.error) || (query.error as { code?: string }).code === 'PGRST116') return <PermissionDenied />;
+    if (isPermissionError(query.error) || ['PGRST116', 'P0002'].includes((query.error as { code?: string }).code ?? '')) return <PermissionDenied />;
     return <ErrorState message={toUserMessage(query.error)} onRetry={() => void query.refetch()} />;
   }
   const p = query.data!;
   const name = fullName(p);
-  const age = ageFromDob(p.date_of_birth);
+  const age = ageLabel(p);
   const canClinical = can(CAN_VIEW_CLINICAL);
 
   return (
     <>
       <PageHeader
         breadcrumbs={[{ label: t('nav.patients'), to: '/patients' }, { label: name }]}
-        title={<PatientIdentity size="lg" name={name} code={p.patient_code} meta={[age !== null ? `${age} y` : null, t(`gender.${p.gender}`)].filter(Boolean).join(' · ')} />}
+        title={<PatientIdentity size="lg" name={name} code={p.patient_code} meta={[age !== '—' ? `${age} y` : null, t(`gender.${p.gender}`), p.occupation].filter(Boolean).join(' · ')} />}
         meta={
           <>
+            {p.status !== 'active' && <Badge tone="warning">{t(`patientStatus.${p.status}`)}</Badge>}
             {p.prakriti && <Badge tone="forest">{t('patients.prakriti')}: {t(`prakriti.${p.prakriti}`)}</Badge>}
             {p.blood_group && <Badge>{p.blood_group}</Badge>}
             {p.assigned_doctor_id && <Badge tone="gold">{names.get(p.assigned_doctor_id) ?? t('patients.assignedDoctor')}</Badge>}
@@ -212,8 +216,10 @@ export function PatientDetailPage() {
           {canClinical && <TabsTrigger value="visits">{t('patients.visits')}</TabsTrigger>}
           {canClinical && <TabsTrigger value="prescriptions">{t('patients.prescriptions')}</TabsTrigger>}
           {canClinical && <TabsTrigger value="investigations">{t('patients.investigations')}</TabsTrigger>}
+          {canClinical && <TabsTrigger value="documents">{t('patients.documents')}</TabsTrigger>}
           <TabsTrigger value="appointments">{t('patients.appointments')}</TabsTrigger>
           {can('billing.read') && <TabsTrigger value="invoices">{t('patients.invoices')}</TabsTrigger>}
+          <TabsTrigger value="consents">{t('patients.consents')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview">
@@ -238,8 +244,9 @@ export function PatientDetailPage() {
                   <Detail label={t('patients.prakriti')}>{p.prakriti && t(`prakriti.${p.prakriti}`)}</Detail>
                   <Detail label={t('patients.chronicConditions')}>{p.chronic_conditions && <span className="whitespace-pre-line">{p.chronic_conditions}</span>}</Detail>
                   <Detail label={t('patients.allergies')}>{p.allergies}</Detail>
+                  <Detail label={t('patients.occupation')}>{p.occupation}</Detail>
                   <Detail label={t('patients.registered')}>
-                    <span className="tabular">{formatDate(p.created_at)}</span>
+                    <span className="tabular">{formatDate(p.registered_on)}</span>
                   </Detail>
                 </dl>
               </CardBody>
@@ -261,6 +268,14 @@ export function PatientDetailPage() {
             <InvestigationsPanel patientId={p.id} canWrite={can('clinical.write')} />
           </TabsContent>
         )}
+        {canClinical && (
+          <TabsContent value="documents">
+            <DocumentsPanel patientId={p.id} canWrite={can('clinical.write')} />
+          </TabsContent>
+        )}
+        <TabsContent value="consents">
+          <ConsentsPanel patientId={p.id} />
+        </TabsContent>
         <TabsContent value="appointments">
           <AppointmentsTab patientId={p.id} />
         </TabsContent>
@@ -271,7 +286,7 @@ export function PatientDetailPage() {
         )}
       </Tabs>
 
-      <PatientFormDrawer open={editing} onOpenChange={setEditing} patient={p} />
+      <PatientFormDrawer open={editing} onOpenChange={setEditing} patient={p} onSaved={() => void query.refetch()} />
     </>
   );
 }

@@ -22,14 +22,30 @@ import { formatDate } from '@/lib/formatters';
 import { qk } from '@/lib/query/keys';
 import { useFieldError } from '@/lib/validation/useFieldError';
 import { useI18n } from '@/locales/i18n';
-import { fetchStaff, inviteMember, updateMember } from '@/services/clinic';
-import { ASSIGNABLE_ROLES, type AppRole, type StaffMember } from '@/types/domain';
+import { fetchBranches, fetchMemberBranches, fetchStaff, inviteMember, setMemberBranches, updateMember } from '@/services/clinic';
+import { ASSIGNABLE_ROLES, type AppRole, type Branch, type StaffMember } from '@/types/domain';
 
 const inviteSchema = z.object({
   fullName: z.string().trim().min(2).max(120),
   email: z.string().trim().email(),
   roles: z.array(z.enum(ASSIGNABLE_ROLES)).min(1, 'required'),
+  branchIds: z.array(z.string().uuid()),
 });
+
+/** Branch scope picker. No selection means access to every branch. */
+function BranchPicker({ branches, value, onChange }: { branches: Branch[]; value: string[]; onChange: (v: string[]) => void }) {
+  const { t } = useI18n();
+  if (branches.length <= 1) return null;
+  return (
+    <fieldset className="space-y-2">
+      <legend className="mb-1 text-sm font-medium">{t('staff.branchAccess')}</legend>
+      {branches.map((b) => (
+        <Checkbox key={b.id} label={b.name} checked={value.includes(b.id)} onChange={(e) => onChange(e.target.checked ? [...value, b.id] : value.filter((x) => x !== b.id))} />
+      ))}
+      <p className="text-xs text-ink-muted">{t('staff.branchesHint')}</p>
+    </fieldset>
+  );
+}
 
 function RolePicker({ value, onChange }: { value: AppRole[]; onChange: (v: AppRole[]) => void }) {
   const { t } = useI18n();
@@ -48,14 +64,14 @@ function RolePicker({ value, onChange }: { value: AppRole[]; onChange: (v: AppRo
   );
 }
 
-function InviteDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+function InviteDrawer({ open, onOpenChange, branches }: { open: boolean; onOpenChange: (o: boolean) => void; branches: Branch[] }) {
   const { t } = useI18n();
   const { clinicId } = useClinic();
   const queryClient = useQueryClient();
   const fieldError = useFieldError();
-  const form = useForm<z.infer<typeof inviteSchema>>({ resolver: zodResolver(inviteSchema), defaultValues: { fullName: '', email: '', roles: ['doctor'] } });
+  const form = useForm<z.infer<typeof inviteSchema>>({ resolver: zodResolver(inviteSchema), defaultValues: { fullName: '', email: '', roles: ['doctor'], branchIds: [] } });
   const mutation = useMutation({
-    mutationFn: (v: z.infer<typeof inviteSchema>) => inviteMember({ clinicId, email: v.email, fullName: v.fullName, roles: v.roles }),
+    mutationFn: (v: z.infer<typeof inviteSchema>) => inviteMember({ clinicId, email: v.email, fullName: v.fullName, roles: v.roles, branchIds: v.branchIds }),
     onSuccess: async () => {
       notify.success(t('staff.invited'));
       await queryClient.invalidateQueries({ queryKey: qk.staff(clinicId) });
@@ -90,6 +106,7 @@ function InviteDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o:
         </FormField>
         <Controller control={form.control} name="roles" render={({ field }) => <RolePicker value={field.value} onChange={field.onChange} />} />
         {form.formState.errors.roles && <p className="text-xs font-medium text-danger">{t('validation.required')}</p>}
+        <Controller control={form.control} name="branchIds" render={({ field }) => <BranchPicker branches={branches} value={field.value} onChange={field.onChange} />} />
         <Alert tone="info">{t('staff.futureRoles')}</Alert>
       </form>
     </Drawer>
@@ -104,15 +121,23 @@ export function StaffPage() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [editing, setEditing] = useState<StaffMember | null>(null);
   const [roles, setRoles] = useState<AppRole[]>([]);
+  const [branchIds, setBranchIds] = useState<string[]>([]);
   const query = useQuery({ queryKey: qk.staff(clinicId), queryFn: () => fetchStaff(clinicId) });
+  const branches = useQuery({ queryKey: qk.branches(clinicId), queryFn: () => fetchBranches(clinicId) });
+  const scopes = useQuery({ queryKey: [clinicId, 'member-branches'], queryFn: () => fetchMemberBranches(clinicId) });
   const canManage = can('users.manage');
+  const branchName = new Map((branches.data ?? []).map((b) => [b.id, b.name]));
 
   const update = useMutation({
-    mutationFn: ({ id, values }: { id: string; values: { roles?: AppRole[]; status?: 'active' | 'suspended' } }) => updateMember(id, values),
+    mutationFn: async ({ id, values, branches: scope }: { id: string; values: { roles?: AppRole[]; status?: 'active' | 'suspended' }; branches?: string[] }) => {
+      await updateMember(id, values);
+      if (scope) await setMemberBranches(clinicId, id, scope);
+    },
     onSuccess: async () => {
       notify.success(t('staff.updated'));
       await queryClient.invalidateQueries({ queryKey: qk.staff(clinicId) });
       await queryClient.invalidateQueries({ queryKey: qk.doctors(clinicId) });
+      await queryClient.invalidateQueries({ queryKey: [clinicId, 'member-branches'] });
       setEditing(null);
     },
     onError: (e) => notify.error(e),
@@ -130,7 +155,16 @@ export function StaffPage() {
       ),
     },
     { key: 'roles', header: t('staff.roles'), cell: (m) => <span className="flex flex-wrap gap-1">{m.roles.map((r) => <Badge key={r} tone="forest">{t(`roles.${r}`)}</Badge>)}</span> },
-    { key: 'status', header: t('staff.status'), cell: (m) => <StatusBadge status={m.status} label={t(`memberStatus.${m.status}`)} /> },
+    {
+      key: 'branches',
+      header: t('staff.branchAccess'),
+      hideBelow: 'lg',
+      cell: (m) => {
+        const ids = scopes.data?.get(m.id) ?? [];
+        return <span className="text-ink-muted">{ids.length === 0 ? t('staff.allBranches') : ids.map((id) => branchName.get(id) ?? '—').join(', ')}</span>;
+      },
+    },
+    { key: 'status', header: t('staff.status'), cell: (m) => <StatusBadge status={m.status} label={m.status === 'invited' ? t('staff.pending') : t(`memberStatus.${m.status}`)} /> },
     { key: 'joined', header: t('staff.joined'), hideBelow: 'md', cell: (m) => <span className="tabular text-ink-muted">{formatDate(m.created_at)}</span> },
     {
       key: 'actions',
@@ -147,6 +181,7 @@ export function StaffPage() {
                 onSelect={() => {
                   setEditing(m);
                   setRoles(m.roles.filter((r): r is AppRole => (ASSIGNABLE_ROLES as readonly string[]).includes(r)));
+                  setBranchIds(scopes.data?.get(m.id) ?? []);
                 }}
               >
                 {t('staff.editAccess')}
@@ -187,7 +222,7 @@ export function StaffPage() {
           <DataTable caption={t('staff.title')} columns={columns} rows={query.data!} rowKey={(m) => m.id} empty={<EmptyState icon={<Users />} />} />
         )}
       </Card>
-      {canManage && <InviteDrawer open={inviteOpen} onOpenChange={setInviteOpen} />}
+      {canManage && <InviteDrawer open={inviteOpen} onOpenChange={setInviteOpen} branches={branches.data ?? []} />}
       <Modal
         open={Boolean(editing)}
         onOpenChange={(o) => !o && setEditing(null)}
@@ -201,14 +236,21 @@ export function StaffPage() {
             <Button loading={update.isPending} disabled={roles.length === 0} onClick={() =>
                 editing &&
                 // Keep roles the UI cannot assign yet (e.g. receptionist) intact.
-                update.mutate({ id: editing.id, values: { roles: [...roles, ...editing.roles.filter((r) => !(ASSIGNABLE_ROLES as readonly string[]).includes(r))] } })
+                update.mutate({
+                  id: editing.id,
+                  values: { roles: [...roles, ...editing.roles.filter((r) => !(ASSIGNABLE_ROLES as readonly string[]).includes(r))] },
+                  branches: branchIds,
+                })
               }>
               {t('common.save')}
             </Button>
           </>
         }
       >
-        <RolePicker value={roles} onChange={setRoles} />
+        <div className="space-y-5">
+          <RolePicker value={roles} onChange={setRoles} />
+          <BranchPicker branches={branches.data ?? []} value={branchIds} onChange={setBranchIds} />
+        </div>
       </Modal>
     </>
   );

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { optionalNumber, optionalText } from '@/lib/validation/schemas';
-import { AGNIS, BALAS, DOSHAS, KOSHTHAS, PRAKRITIS, type AyurvedicExamination, type Consultation } from '@/types/domain';
+import { AGNIS, AMA_LEVELS, BALAS, DOSHAS, KOSHTHAS, PRAKRITIS, type AyurvedicExamination, type Consultation } from '@/types/domain';
 import type { ConsultationInput, ExaminationInput } from '@/services/clinical';
 
 const optionalEnum = <T extends readonly [string, ...string[]]>(values: T) => z.enum(values).optional().or(z.literal(''));
@@ -18,6 +18,7 @@ export const consultationSchema = z
     height_cm: optionalNumber(30, 260),
     spo2_percent: optionalNumber(50, 100),
     clinical_findings: optionalText(5000),
+    assessment: optionalText(3000),
     diagnosis: optionalText(1000),
     ayurvedic_diagnosis: optionalText(1000),
     treatment_plan: optionalText(5000),
@@ -40,6 +41,20 @@ export const consultationSchema = z
       akriti: optionalText(500),
       sara: optionalText(500),
       satva: optionalText(500),
+      vata_score: optionalNumber(0, 10),
+      pitta_score: optionalNumber(0, 10),
+      kapha_score: optionalNumber(0, 10),
+      ama: optionalEnum(AMA_LEVELS),
+      nidra: optionalText(500),
+      appetite: optionalText(500),
+      digestion: optionalText(500),
+      bowel_habits: optionalText(500),
+      dinacharya: optionalText(1000),
+      lifestyle: optionalText(1000),
+      general_examination: optionalText(2000),
+      family_history: optionalText(1000),
+      // Values for clinic-configured fields; validated server-side against definitions.
+      custom_fields: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])),
       notes: optionalText(3000),
     }),
   })
@@ -64,6 +79,7 @@ export function toConsultationForm(c?: Consultation | null, e?: AyurvedicExamina
     height_cm: str(c?.height_cm),
     spo2_percent: str(c?.spo2_percent),
     clinical_findings: c?.clinical_findings ?? '',
+    assessment: c?.assessment ?? '',
     diagnosis: c?.diagnosis ?? '',
     ayurvedic_diagnosis: c?.ayurvedic_diagnosis ?? '',
     treatment_plan: c?.treatment_plan ?? '',
@@ -86,6 +102,19 @@ export function toConsultationForm(c?: Consultation | null, e?: AyurvedicExamina
       akriti: e?.akriti ?? '',
       sara: e?.sara ?? '',
       satva: e?.satva ?? '',
+      vata_score: str(e?.vata_score),
+      pitta_score: str(e?.pitta_score),
+      kapha_score: str(e?.kapha_score),
+      ama: e?.ama ?? '',
+      nidra: e?.nidra ?? '',
+      appetite: e?.appetite ?? '',
+      digestion: e?.digestion ?? '',
+      bowel_habits: e?.bowel_habits ?? '',
+      dinacharya: e?.dinacharya ?? '',
+      lifestyle: e?.lifestyle ?? '',
+      general_examination: e?.general_examination ?? '',
+      family_history: e?.family_history ?? '',
+      custom_fields: e?.custom_fields ?? {},
       notes: e?.notes ?? '',
     },
   };
@@ -113,6 +142,7 @@ export function toConsultationPayload(
       height_cm: v.height_cm,
       spo2_percent: v.spo2_percent,
       clinical_findings: nul(v.clinical_findings),
+      assessment: nul(v.assessment),
       diagnosis: nul(v.diagnosis),
       ayurvedic_diagnosis: nul(v.ayurvedic_diagnosis),
       treatment_plan: nul(v.treatment_plan),
@@ -136,6 +166,20 @@ export function toConsultationPayload(
       akriti: nul(v.exam.akriti),
       sara: nul(v.exam.sara),
       satva: nul(v.exam.satva),
+      vata_score: v.exam.vata_score,
+      pitta_score: v.exam.pitta_score,
+      kapha_score: v.exam.kapha_score,
+      ama: nul(v.exam.ama),
+      nidra: nul(v.exam.nidra),
+      appetite: nul(v.exam.appetite),
+      digestion: nul(v.exam.digestion),
+      bowel_habits: nul(v.exam.bowel_habits),
+      dinacharya: nul(v.exam.dinacharya),
+      lifestyle: nul(v.exam.lifestyle),
+      general_examination: nul(v.exam.general_examination),
+      family_history: nul(v.exam.family_history),
+      // Drop empty values so unset fields are not stored.
+      custom_fields: Object.fromEntries(Object.entries(v.exam.custom_fields).filter(([, val]) => val !== '' && val !== null)),
       notes: nul(v.exam.notes),
     },
   };

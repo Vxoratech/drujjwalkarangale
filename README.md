@@ -10,7 +10,7 @@ A multi-tenant clinic-management SaaS for Ayurvedic clinics and practitioners in
 | Backend | Supabase: Auth, PostgreSQL with Row Level Security, Storage, Edge Functions |
 | Tests | Vitest + Testing Library (unit/components); PGlite (real Postgres in WASM) for migrations, RLS and RPC tests |
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design and [docs/FEATURES.md](docs/FEATURES.md) for what is implemented, the acceptance criteria, and what is still planned.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design, [docs/DATABASE.md](docs/DATABASE.md) for every table (generated), [docs/PERMISSIONS.md](docs/PERMISSIONS.md) for the role matrix, and [docs/FEATURES.md](docs/FEATURES.md) for status and acceptance criteria.
 
 ## Quick start (local)
 
@@ -35,10 +35,12 @@ SUPABASE_URL=http://127.0.0.1:54321 SUPABASE_ANON_KEY=<anon> SUPABASE_SERVICE_RO
 
 Sign in as `dr.ujjwal@demo.vaidyora.test` (admin + doctor), `admin@demo.vaidyora.test` (admin) or `dr.meera@demo.vaidyora.test` (doctor). The script refuses to run against a hosted `*.supabase.co` project unless `ALLOW_REMOTE_SEED=yes`.
 
-### Staff invitations (Edge Function)
+### Edge Functions
+
+`invite-member` (staff invitations) and `document-url` (audited, short-lived links to patient files):
 
 ```bash
-supabase functions serve invite-member --env-file supabase/functions/.env
+supabase functions serve --env-file supabase/functions/.env
 ```
 
 `supabase/functions/.env` (git-ignored) needs `SITE_URL` and `ALLOWED_ORIGINS`. Supabase injects `SUPABASE_URL`, `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` automatically.
@@ -54,6 +56,7 @@ supabase functions serve invite-member --env-file supabase/functions/.env
 | `npm run test:db` | Database tests only (migrations + RLS + RPCs in PGlite) |
 | `npm run db:types` | Generate full Supabase types from the local DB |
 | `npm run seed:demo` | Seed the fictional demo clinic (see above) |
+| `npm run docs:db` | Regenerate `docs/DATABASE.md` and `docs/PERMISSIONS.md` from the migrations |
 
 ## Security essentials
 

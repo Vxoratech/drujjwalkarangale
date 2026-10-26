@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Ban, IndianRupee, Printer } from 'lucide-react';
+import { Ban, IndianRupee, Printer, Undo2 } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link, useParams } from 'react-router-dom';
@@ -19,9 +19,9 @@ import { formatDate, formatDateTime, formatINR, fullName, paiseToRupees, todayIS
 import { qk } from '@/lib/query/keys';
 import { useFieldError } from '@/lib/validation/useFieldError';
 import { useI18n } from '@/locales/i18n';
-import { getInvoice, recordPayment, voidInvoice } from '@/services/billing';
+import { getInvoice, recordPayment, recordRefund, voidInvoice } from '@/services/billing';
 import { PAYMENT_METHODS, type InvoiceDetail } from '@/types/domain';
-import { paymentSchema, type PaymentFormInput, type PaymentFormValues } from './invoiceSchema';
+import { paymentSchema, refundSchema, type PaymentFormInput, type PaymentFormValues, type RefundFormInput, type RefundFormValues } from './invoiceSchema';
 import { InvoiceStatusBadge } from './InvoiceStatusBadge';
 
 function PaymentModal({ invoice, open, onOpenChange }: { invoice: InvoiceDetail; open: boolean; onOpenChange: (o: boolean) => void }) {
@@ -94,12 +94,84 @@ function PaymentModal({ invoice, open, onOpenChange }: { invoice: InvoiceDetail;
   );
 }
 
+function RefundModal({ invoice, open, onOpenChange }: { invoice: InvoiceDetail; open: boolean; onOpenChange: (o: boolean) => void }) {
+  const { t } = useI18n();
+  const { clinicId } = useClinic();
+  const queryClient = useQueryClient();
+  const fieldError = useFieldError();
+  const refundable = invoice.amount_paid_paise - invoice.amount_refunded_paise;
+  const form = useForm<RefundFormInput, unknown, RefundFormValues>({
+    resolver: zodResolver(refundSchema),
+    values: { amount: String(paiseToRupees(refundable)), method: invoice.payments.at(-1)?.method ?? 'cash', reason: '', payment_id: '', reference: '' },
+  });
+  const mutation = useMutation({
+    mutationFn: (v: RefundFormValues) => {
+      if (v.amount > refundable) throw { message: 'Refund exceeds the amount paid' };
+      return recordRefund({ invoiceId: invoice.id, amountPaise: v.amount, method: v.method, reason: v.reason, paymentId: v.payment_id || null, reference: v.reference || null });
+    },
+    onSuccess: async () => {
+      notify.success(t('billing.refundRecorded'));
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: qk.invoice(clinicId, invoice.id) }),
+        queryClient.invalidateQueries({ queryKey: [clinicId, 'invoices'] }),
+        queryClient.invalidateQueries({ queryKey: [clinicId, 'dashboard'] }),
+      ]);
+      onOpenChange(false);
+    },
+    onError: (e) => notify.error(e),
+  });
+  const e = form.formState.errors;
+  return (
+    <Modal
+      open={open}
+      onOpenChange={(o) => !mutation.isPending && onOpenChange(o)}
+      title={t('billing.refund')}
+      description={`${invoice.invoice_no} · ${t('billing.refundable', { amount: formatINR(refundable) })}`}
+      footer={
+        <>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>
+            {t('common.cancel')}
+          </Button>
+          <Button type="submit" form="refund-form" variant="danger" loading={mutation.isPending}>
+            {t('billing.refund')}
+          </Button>
+        </>
+      }
+    >
+      <form id="refund-form" noValidate className="space-y-4" onSubmit={form.handleSubmit((v) => mutation.mutate(v))}>
+        <FormGrid>
+          <FormField label={t('billing.amount')} error={fieldError(e.amount)} required>
+            <Input inputMode="decimal" className="tabular" {...form.register('amount')} />
+          </FormField>
+          <FormField label={t('billing.method')} required>
+            <Select options={PAYMENT_METHODS.map((m) => ({ value: m, label: t(`paymentMethod.${m}`) }))} {...form.register('method')} />
+          </FormField>
+          <FormField label={t('billing.againstPayment')}>
+            <Select
+              placeholder={t('billing.anyPayment')}
+              options={invoice.payments.map((p) => ({ value: p.id, label: `${p.receipt_no ?? t(`paymentMethod.${p.method}`)} · ${formatINR(p.amount_paise)}` }))}
+              {...form.register('payment_id')}
+            />
+          </FormField>
+          <FormField label={t('billing.reference')} error={fieldError(e.reference)}>
+            <Input autoComplete="off" {...form.register('reference')} />
+          </FormField>
+        </FormGrid>
+        <FormField label={t('billing.refundReason')} error={fieldError(e.reason)} required>
+          <Textarea rows={2} {...form.register('reason')} />
+        </FormField>
+      </form>
+    </Modal>
+  );
+}
+
 export function InvoiceDetailPage() {
   const { invoiceId = '' } = useParams();
   const { t } = useI18n();
   const { clinicId, can } = useClinic();
   const queryClient = useQueryClient();
   const [payOpen, setPayOpen] = useState(false);
+  const [refundOpen, setRefundOpen] = useState(false);
   const [voidOpen, setVoidOpen] = useState(false);
   const [reason, setReason] = useState('');
   const query = useQuery({ queryKey: qk.invoice(clinicId, invoiceId), queryFn: () => getInvoice(clinicId, invoiceId) });
@@ -122,6 +194,7 @@ export function InvoiceDetailPage() {
   const balance = inv.total_paise - inv.amount_paid_paise;
   const canPay = can('payments.record') && ['issued', 'partially_paid'].includes(inv.status) && balance > 0;
   const canVoid = can('billing.void') && inv.status !== 'void' && inv.amount_paid_paise === 0;
+  const canRefund = can('payments.refund') && inv.amount_paid_paise - inv.amount_refunded_paise > 0;
 
   return (
     <>
@@ -142,6 +215,11 @@ export function InvoiceDetailPage() {
             {canVoid && (
               <Button variant="ghost" className="text-danger" leftIcon={<Ban className="size-4" />} onClick={() => setVoidOpen(true)}>
                 {t('billing.void')}
+              </Button>
+            )}
+            {canRefund && (
+              <Button variant="secondary" leftIcon={<Undo2 className="size-4" />} onClick={() => setRefundOpen(true)}>
+                {t('billing.refund')}
               </Button>
             )}
             {canPay && (
@@ -223,6 +301,12 @@ export function InvoiceDetailPage() {
                   <dt className="text-ink-muted">{t('billing.paid')}</dt>
                   <dd className="tabular text-success">{formatINR(inv.amount_paid_paise)}</dd>
                 </div>
+                {inv.amount_refunded_paise > 0 && (
+                  <div className="flex justify-between">
+                    <dt className="text-ink-muted">{t('billing.refunded')}</dt>
+                    <dd className="tabular text-danger">−{formatINR(inv.amount_refunded_paise)}</dd>
+                  </div>
+                )}
                 <div className="flex justify-between font-medium">
                   <dt>{t('billing.balance')}</dt>
                   <dd className="tabular">{inv.status === 'void' ? '—' : formatINR(balance)}</dd>
@@ -240,7 +324,10 @@ export function InvoiceDetailPage() {
                   {inv.payments.map((p) => (
                     <li key={p.id} className="flex items-start justify-between gap-3 text-sm">
                       <div>
-                        <p className="font-medium">{t(`paymentMethod.${p.method}`)}</p>
+                        <p className="font-medium">
+                          {t(`paymentMethod.${p.method}`)}
+                          {p.receipt_no && <span className="tabular ml-2 text-xs font-normal text-ink-muted">{t('billing.receiptNo', { no: p.receipt_no })}</span>}
+                        </p>
                         <p className="tabular text-xs text-ink-muted">
                           {formatDateTime(p.paid_at)}
                           {p.reference && ` · ${p.reference}`}
@@ -255,7 +342,28 @@ export function InvoiceDetailPage() {
           </Card>
         </div>
       </div>
+      {inv.refunds.length > 0 && (
+        <Card className="mt-4">
+          <CardHeader title={t('billing.refunds')} />
+          <CardBody>
+            <ul className="space-y-3">
+              {inv.refunds.map((r) => (
+                <li key={r.id} className="flex items-start justify-between gap-3 text-sm">
+                  <div>
+                    <p className="tabular font-medium">{r.refund_no}</p>
+                    <p className="text-xs text-ink-muted">
+                      {t(`paymentMethod.${r.method}`)} · {formatDateTime(r.refunded_at)} · {r.reason}
+                    </p>
+                  </div>
+                  <span className="tabular font-medium text-danger">−{formatINR(r.amount_paise)}</span>
+                </li>
+              ))}
+            </ul>
+          </CardBody>
+        </Card>
+      )}
       {canPay && <PaymentModal invoice={inv} open={payOpen} onOpenChange={setPayOpen} />}
+      {canRefund && <RefundModal invoice={inv} open={refundOpen} onOpenChange={setRefundOpen} />}
       <ConfirmDialog
         open={voidOpen}
         onOpenChange={(o) => {

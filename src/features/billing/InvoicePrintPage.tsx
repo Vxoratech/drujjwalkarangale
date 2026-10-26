@@ -72,11 +72,18 @@ export function InvoicePrintPage() {
           {inv.discount_paise > 0 && <div className="flex justify-between"><dt>{t('billing.discount').replace(' (₹)', '')}</dt><dd className="tabular">−{formatINR(inv.discount_paise)}</dd></div>}
           <div className="flex justify-between border-t border-line-strong pt-1 text-sm font-semibold"><dt>{t('billing.total')}</dt><dd className="tabular">{formatINR(inv.total_paise)}</dd></div>
           <div className="flex justify-between"><dt>{t('billing.paid')}</dt><dd className="tabular">{formatINR(inv.amount_paid_paise)}</dd></div>
+          {inv.amount_refunded_paise > 0 && <div className="flex justify-between"><dt>{t('billing.refunded')}</dt><dd className="tabular">−{formatINR(inv.amount_refunded_paise)}</dd></div>}
           <div className="flex justify-between font-medium"><dt>{t('billing.balance')}</dt><dd className="tabular">{formatINR(inv.total_paise - inv.amount_paid_paise)}</dd></div>
         </dl>
         {inv.payments.length > 0 && (
           <p className="mt-4 text-xs text-ink-muted">
-            {t('billing.payments')}: {inv.payments.map((p) => `${t(`paymentMethod.${p.method}`)} ${formatINR(p.amount_paise)} (${formatDate(p.paid_at)})`).join('; ')}
+            {t('billing.payments')}:{' '}
+            {inv.payments.map((p) => `${p.receipt_no ? `${p.receipt_no} · ` : ''}${t(`paymentMethod.${p.method}`)} ${formatINR(p.amount_paise)} (${formatDate(p.paid_at)})`).join('; ')}
+          </p>
+        )}
+        {inv.refunds.length > 0 && (
+          <p className="mt-1 text-xs text-ink-muted">
+            {t('billing.refunds')}: {inv.refunds.map((r) => `${r.refund_no} · ${formatINR(r.amount_paise)} (${formatDate(r.refunded_at)})`).join('; ')}
           </p>
         )}
       </PrintableDocument>

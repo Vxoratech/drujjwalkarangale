@@ -7,11 +7,36 @@ export async function fetchMemberships(userId: UUID): Promise<Membership[]> {
   return unwrap<Membership[]>(
     await getSupabase()
       .from('clinic_members')
-      .select('id, clinic_id, user_id, roles, status, default_branch_id, clinic:clinics(id, name, city, logo_path)')
+      .select('id, clinic_id, user_id, roles, status, default_branch_id, clinic:clinics(id, name, city, logo_path, status, status_reason)')
       .eq('user_id', userId)
-      .eq('status', 'active')
+      .in('status', ['active', 'invited'])
       .order('created_at'),
   );
+}
+
+export async function acceptInvitation(clinicId: UUID): Promise<void> {
+  unwrap(await getSupabase().rpc('accept_invitation', { p_clinic: clinicId }));
+}
+
+/** Client-reported session event (authoritative auth events live in Supabase's auth audit log). */
+export async function logSessionEvent(clinicId: UUID, event: 'session.signed_in' | 'session.clinic_selected' | 'session.signed_out'): Promise<void> {
+  await getSupabase().rpc('log_session_event', { p_clinic: clinicId, p_event: event });
+}
+
+export async function fetchMemberBranches(clinicId: UUID): Promise<Map<UUID, UUID[]>> {
+  const rows = unwrap<{ member_id: UUID; branch_id: UUID }[]>(await getSupabase().from('member_branches').select('member_id, branch_id').eq('clinic_id', clinicId));
+  const map = new Map<UUID, UUID[]>();
+  for (const r of rows) map.set(r.member_id, [...(map.get(r.member_id) ?? []), r.branch_id]);
+  return map;
+}
+
+/** Replace a member's branch scope (empty = all branches). */
+export async function setMemberBranches(clinicId: UUID, memberId: UUID, branchIds: UUID[]): Promise<void> {
+  const db = getSupabase();
+  unwrap(await db.from('member_branches').delete().eq('member_id', memberId).select('member_id'));
+  if (branchIds.length > 0) {
+    unwrap(await db.from('member_branches').insert(branchIds.map((branch_id) => ({ member_id: memberId, clinic_id: clinicId, branch_id }))).select('member_id'));
+  }
 }
 
 export async function fetchPermissions(clinicId: UUID): Promise<Permission[]> {
@@ -23,7 +48,7 @@ export async function fetchClinic(clinicId: UUID): Promise<Clinic> {
   return unwrap<Clinic>(await getSupabase().from('clinics').select('*').eq('id', clinicId).single());
 }
 
-export type ClinicUpdate = Partial<Omit<Clinic, 'id' | 'timezone' | 'currency' | 'logo_path'>>;
+export type ClinicUpdate = Partial<Omit<Clinic, 'id' | 'currency' | 'logo_path' | 'status' | 'status_reason' | 'settings'>>;
 
 export async function updateClinic(clinicId: UUID, values: ClinicUpdate): Promise<Clinic> {
   return unwrap<Clinic>(await getSupabase().from('clinics').update(values).eq('id', clinicId).select('*').single());
@@ -79,13 +104,13 @@ export async function updateMember(memberId: UUID, values: { roles?: AppRole[]; 
   unwrap(await getSupabase().from('clinic_members').update(values).eq('id', memberId).select('id').single());
 }
 
-export async function inviteMember(input: { clinicId: UUID; email: string; fullName: string; roles: AppRole[] }): Promise<void> {
+export async function inviteMember(input: { clinicId: UUID; email: string; fullName: string; roles: AppRole[]; branchIds?: UUID[] }): Promise<void> {
   const { error } = await getSupabase().functions.invoke('invite-member', { body: input });
   if (error) {
     // FunctionsHttpError carries the JSON body in `context`; surface our safe message only.
     const ctx = (error as { context?: Response }).context;
     const body = ctx ? ((await ctx.json().catch(() => null)) as { error?: string } | null) : null;
-    throw { message: body?.error ?? 'Could not send the invitation', code: ctx?.status === 403 ? '42501' : undefined };
+    throw { message: body?.error ?? 'Could not send the invitation', code: ctx?.status === 403 ? '42501' : ctx?.status === 422 ? 'P0001' : undefined };
   }
 }
 

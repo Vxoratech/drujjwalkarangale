@@ -21,6 +21,8 @@ import { useFieldError } from '@/lib/validation/useFieldError';
 import { useI18n } from '@/locales/i18n';
 import { fetchBranches, saveBranch, updateClinic } from '@/services/clinic';
 import type { Branch, Clinic } from '@/types/domain';
+import { ExamFieldsCard } from './ExamFieldsCard';
+import { SubscriptionCard } from './SubscriptionCard';
 
 const clinicSchema = z.object({
   name: requiredText(120, 2),
@@ -36,6 +38,8 @@ const clinicSchema = z.object({
   invoice_prefix: z.string().trim().toUpperCase().regex(/^[A-Z0-9]{2,8}$/, 'range:2:8'),
   consultation_fee: z.union([z.string(), z.number()]).transform((v) => (v === '' ? 0 : rupeesToPaise(v))).refine((v) => Number.isFinite(v) && v >= 0, 'range:0:100000'),
   default_locale: z.enum(['en', 'mr']),
+  timezone: z.string().min(1),
+  audit_retention_days: z.union([z.string(), z.number()]).pipe(z.coerce.number().int().min(1095).max(7300)),
 });
 type ClinicFormInput = z.input<typeof clinicSchema>;
 type ClinicFormValues = z.output<typeof clinicSchema>;
@@ -57,7 +61,15 @@ function toForm(c: Clinic): ClinicFormInput {
     invoice_prefix: c.invoice_prefix,
     consultation_fee: String(paiseToRupees(c.consultation_fee_paise)),
     default_locale: c.default_locale,
+    timezone: c.timezone,
+    audit_retention_days: String(c.audit_retention_days),
   };
+}
+
+const COMMON_ZONES = ['Asia/Kolkata', 'Asia/Dubai', 'Asia/Kathmandu', 'Asia/Dhaka', 'Asia/Colombo', 'Asia/Singapore', 'Europe/London', 'America/New_York'];
+function timeZoneOptions(current: string) {
+  const all = typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : COMMON_ZONES;
+  return [...new Set([current, ...COMMON_ZONES, ...all])].map((z) => ({ value: z, label: z.replace(/_/g, ' ') }));
 }
 
 const branchSchema = z.object({
@@ -152,6 +164,8 @@ export function SettingsPage() {
         invoice_prefix: v.invoice_prefix,
         consultation_fee_paise: v.consultation_fee,
         default_locale: v.default_locale,
+        timezone: v.timezone,
+        audit_retention_days: v.audit_retention_days,
       }),
     onSuccess: (saved) => {
       notify.success(t('settings.saved'));
@@ -218,6 +232,12 @@ export function SettingsPage() {
                     <FormField label={t('settings.defaultLanguage')}>
                       <Select options={[{ value: 'en', label: 'English' }, { value: 'mr', label: 'मराठी' }]} {...form.register('default_locale')} />
                     </FormField>
+                    <FormField label={t('settings.timezone')}>
+                      <Select options={timeZoneOptions(clinic.timezone)} {...form.register('timezone')} />
+                    </FormField>
+                    <FormField label={t('settings.auditRetention')} error={fieldError(e.audit_retention_days)}>
+                      <Input inputMode="numeric" className="tabular" {...form.register('audit_retention_days')} />
+                    </FormField>
                   </FormGrid>
                 </FormSection>
                 <div className="flex justify-end">
@@ -229,7 +249,9 @@ export function SettingsPage() {
             </form>
           </CardBody>
         </Card>
-        <Card className="self-start">
+        <div className="space-y-6 self-start">
+        <SubscriptionCard />
+        <Card>
           <CardHeader
             title={t('settings.branches')}
             actions={
@@ -263,6 +285,10 @@ export function SettingsPage() {
             </ul>
           )}
         </Card>
+        </div>
+      </div>
+      <div className="mt-6">
+        <ExamFieldsCard />
       </div>
       <BranchModal open={branchModal.open} branch={branchModal.branch} onOpenChange={(o) => setBranchModal((s) => ({ ...s, open: o }))} />
     </>

@@ -84,8 +84,8 @@ async function main(): Promise<void> {
   );
   must(
     await admin.from('clinic_members').insert([
-      { clinic_id: clinicId, user_id: adminId, roles: ['admin'], invited_by: ownerId },
-      { clinic_id: clinicId, user_id: doctorId, roles: ['doctor'], invited_by: ownerId },
+      { clinic_id: clinicId, user_id: adminId, roles: ['admin'], invited_by: ownerId, accepted_at: new Date().toISOString() },
+      { clinic_id: clinicId, user_id: doctorId, roles: ['doctor'], invited_by: ownerId, accepted_at: new Date().toISOString() },
     ]).select(),
     'members',
   );
@@ -107,7 +107,7 @@ async function main(): Promise<void> {
   const [p1, p2, p3, p4, p5] = patients;
   must(
     await staff.from('appointments').insert([
-      { clinic_id: clinicId, patient_id: p1!.id, doctor_id: ownerId, starts_at: istAt(0, 10, 0), ends_at: istAt(0, 10, 30), type: 'follow_up', reason: 'Knee pain review' },
+      { clinic_id: clinicId, patient_id: p1!.id, doctor_id: ownerId, starts_at: istAt(0, 10, 0), ends_at: istAt(0, 10, 30), type: 'follow_up', source: 'follow_up', reason: 'Knee pain review' },
       { clinic_id: clinicId, patient_id: p2!.id, doctor_id: ownerId, starts_at: istAt(0, 11, 0), ends_at: istAt(0, 11, 30), type: 'new_visit', reason: 'Weight management' },
       { clinic_id: clinicId, patient_id: p5!.id, doctor_id: ownerId, starts_at: istAt(0, 16, 0), ends_at: istAt(0, 17, 0), type: 'panchakarma', reason: 'Abhyanga & swedana' },
       { clinic_id: clinicId, patient_id: p3!.id, doctor_id: doctorId, starts_at: istAt(0, 12, 0), ends_at: istAt(0, 12, 30), type: 'new_visit', reason: 'Acidity, skin rash' },
@@ -121,6 +121,7 @@ async function main(): Promise<void> {
     await owner.from('consultations').insert({
       clinic_id: clinicId, patient_id: p1!.id, doctor_id: ownerId,
       chief_complaint: 'Bilateral knee pain, worse in the morning, for 3 months',
+      assessment: 'Degenerative joint changes with Vata predominance',
       history_of_present_illness: 'Stiffness ~20 min after waking. Crepitus on movement. No swelling.',
       pulse_bpm: 76, bp_systolic: 128, bp_diastolic: 82, weight_kg: 68, height_cm: 158,
       diagnosis: 'Primary osteoarthritis, both knees', ayurvedic_diagnosis: 'Sandhigata Vata',
@@ -136,18 +137,20 @@ async function main(): Promise<void> {
       prakriti: 'vata_pitta', vikriti: ['vata'], agni: 'vishama', koshtha: 'krura', bala: 'madhyama',
       nadi: 'Vata-predominant, sarpa gati', jihva: 'Mildly coated', mala: 'Hard, irregular', mutra: 'Normal',
       shabda: 'Clear', sparsha: 'Dry, cool over joints', drik: 'Normal', akriti: 'Madhyama',
+      vata_score: 7, pitta_score: 4, kapha_score: 2, ama: 'mild', nidra: 'Light sleep, 5–6 h', appetite: 'Variable', bowel_habits: 'Hard stools, alternate days',
+      dinacharya: 'Late dinner, little morning activity',
     }).select('id').single(),
     'examination',
   );
   const rx = must(
-    await owner.from('prescriptions').insert({ clinic_id: clinicId, patient_id: p1!.id, doctor_id: ownerId, consultation_id: consult.id, notes: 'Review after 30 days.' }).select('id').single(),
+    await owner.from('prescriptions').insert({ clinic_id: clinicId, patient_id: p1!.id, doctor_id: ownerId, consultation_id: consult.id, language: 'mr', patient_instructions: 'Avoid cold drinks. Gentle walking every morning.' }).select('id').single(),
     'prescription',
   );
   must(
     await owner.from('prescription_items').insert([
-      { clinic_id: clinicId, prescription_id: rx.id, position: 0, medicine_name: 'Yogaraj Guggulu', form: 'vati', dose: '2 tablets', frequency: 'Twice daily', timing: 'after_food', anupana: 'Warm water', duration_days: 30 },
+      { clinic_id: clinicId, prescription_id: rx.id, position: 0, medicine_name: 'Yogaraj Guggulu', form: 'vati', dose: '2 tablets', quantity: '120 tablets', frequency: 'Twice daily', timing: 'after_food', anupana: 'Warm water', instructions_mr: 'जेवणानंतर कोमट पाण्यासोबत', duration_days: 30 },
       { clinic_id: clinicId, prescription_id: rx.id, position: 1, medicine_name: 'Dashamoola Kashaya', form: 'kashaya', dose: '15 ml + 45 ml water', frequency: 'Twice daily', timing: 'before_food', duration_days: 30 },
-      { clinic_id: clinicId, prescription_id: rx.id, position: 2, medicine_name: 'Mahanarayan Taila', form: 'taila', dose: 'Local application', frequency: 'Once daily', timing: 'as_directed', instructions: 'Warm slightly; massage knees before bath', duration_days: 30 },
+      { clinic_id: clinicId, prescription_id: rx.id, position: 2, medicine_name: 'Mahanarayan Taila', form: 'taila', dose: 'Local application', frequency: 'Once daily', timing: 'as_directed', route: 'topical', instructions_en: 'Warm slightly; massage knees before bath', instructions_mr: 'थोडे कोमट करून आंघोळीपूर्वी गुडघ्यांना मालिश करा', duration_days: 30 },
     ]).select(),
     'prescription items',
   );

@@ -163,7 +163,7 @@ function UserMenu() {
             <DropdownMenuLabel>{t('common.switchClinic')}</DropdownMenuLabel>
             {memberships.map((m) => (
               <DropdownMenuItem key={m.clinic_id} icon={m.clinic_id === clinicId ? <Check /> : <Building2 />} onSelect={() => switchClinic(m.clinic_id)}>
-                {m.clinic.name}
+                {m.clinic?.name ?? "—"}
               </DropdownMenuItem>
             ))}
           </>
@@ -174,6 +174,18 @@ function UserMenu() {
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/** Visible reminder outside production that this is a development/demo/staging environment. */
+function EnvironmentBanner() {
+  const { t } = useI18n();
+  const env = import.meta.env.VITE_APP_ENV ?? 'development';
+  if (env === 'production') return null;
+  return (
+    <div role="note" className="no-print border-b border-gold bg-gold-soft px-4 py-1.5 text-center text-xs font-medium text-gold-ink">
+      {t('common.demoEnvironment', { env: env.charAt(0).toUpperCase() + env.slice(1) })}
+    </div>
   );
 }
 
@@ -259,6 +271,7 @@ export function AppShell() {
           <NotificationsMenu />
           <UserMenu />
         </header>
+        <EnvironmentBanner />
         <main id="main" tabIndex={-1} className="page-x mx-auto w-full max-w-content flex-1 py-[var(--space-page-y)] focus:outline-none">
           <Outlet />
         </main>

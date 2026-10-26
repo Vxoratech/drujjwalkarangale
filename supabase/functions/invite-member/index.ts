@@ -5,20 +5,16 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.47.10';
 import { z } from 'npm:zod@3.24.1';
 import { corsHeaders } from '../_shared/cors.ts';
+import { json } from '../_shared/http.ts';
 
 const InviteSchema = z.object({
   clinicId: z.string().uuid(),
   email: z.string().trim().toLowerCase().email().max(254),
   fullName: z.string().trim().min(2).max(120),
   roles: z.array(z.enum(['admin', 'doctor'])).min(1).max(2),
+  branchIds: z.array(z.string().uuid()).max(50).default([]),
 });
 
-function json(body: unknown, status: number, origin: string | null): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders(origin), 'Content-Type': 'application/json' },
-  });
-}
 
 Deno.serve(async (req) => {
   const origin = req.headers.get('Origin');
@@ -36,7 +32,7 @@ Deno.serve(async (req) => {
 
   const parsed = InviteSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return json({ error: 'Invalid request', issues: parsed.error.flatten().fieldErrors }, 400, origin);
-  const { clinicId, email, fullName, roles } = parsed.data;
+  const { clinicId, email, fullName, roles, branchIds } = parsed.data;
 
   // 1. Authorise as the caller (RLS-scoped client).
   const asCaller = createClient(url, anonKey, { global: { headers: { Authorization: authHeader } } });
@@ -64,13 +60,28 @@ Deno.serve(async (req) => {
   }
   if (!userId) return json({ error: 'Could not invite this user' }, 422, origin);
 
-  const { error: memberError } = await admin.from('clinic_members').upsert(
-    { clinic_id: clinicId, user_id: userId, roles, status: 'active', invited_by: caller.user.id },
-    { onConflict: 'clinic_id,user_id' },
-  );
-  if (memberError) {
-    console.error('invite-member: membership upsert failed', memberError.code);
-    return json({ error: 'Could not add the member to this clinic' }, 500, origin);
+  // The membership stays 'invited' until the user signs in and accepts it
+  // (public.accept_invitation). An existing active membership is not downgraded.
+  const { data: existingMember } = await admin.from('clinic_members').select('id, status').eq('clinic_id', clinicId).eq('user_id', userId).maybeSingle();
+  if (existingMember?.status === 'active') return json({ error: 'This person is already a member of the clinic' }, 409, origin);
+
+  const { data: member, error: memberError } = await admin
+    .from('clinic_members')
+    .upsert({ clinic_id: clinicId, user_id: userId, roles, status: 'invited', invited_by: caller.user.id }, { onConflict: 'clinic_id,user_id' })
+    .select('id')
+    .single();
+  if (memberError || !member) {
+    // Plan limits raise P0001 with a safe message.
+    const safe = memberError?.code === 'P0001' ? memberError.message : 'Could not add the member to this clinic';
+    console.error('invite-member: membership upsert failed', memberError?.code);
+    return json({ error: safe }, memberError?.code === 'P0001' ? 422 : 500, origin);
+  }
+  if (branchIds.length > 0) {
+    await admin.from('member_branches').delete().eq('member_id', member.id);
+    const { error: branchError } = await admin
+      .from('member_branches')
+      .insert(branchIds.map((branch_id) => ({ member_id: member.id, clinic_id: clinicId, branch_id })));
+    if (branchError) return json({ error: 'Could not set branch access' }, 422, origin);
   }
 
   return json({ userId, invited: Boolean(invite.data.user) }, 200, origin);

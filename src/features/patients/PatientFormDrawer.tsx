@@ -15,8 +15,8 @@ import { qk } from '@/lib/query/keys';
 import { useFieldError } from '@/lib/validation/useFieldError';
 import { useI18n } from '@/locales/i18n';
 import { createPatient, updatePatient } from '@/services/patients';
-import { BLOOD_GROUPS, PRAKRITIS, type Patient } from '@/types/domain';
-import { patientSchema, toFormValues, toPatientInput, type PatientFormValues } from './patientSchema';
+import { BLOOD_GROUPS, PATIENT_STATUSES, PRAKRITIS, type Patient } from '@/types/domain';
+import { patientSchema, toFormValues, toPatientInput, type PatientFormInput, type PatientFormValues } from './patientSchema';
 
 export interface PatientFormDrawerProps {
   open: boolean;
@@ -34,7 +34,7 @@ export function PatientFormDrawer({ open, onOpenChange, patient, onSaved }: Pati
   const fieldError = useFieldError();
   const canChooseDoctor = can('patients.read_all');
 
-  const form = useForm<PatientFormValues>({ resolver: zodResolver(patientSchema), defaultValues: toFormValues(patient) });
+  const form = useForm<PatientFormInput, unknown, PatientFormValues>({ resolver: zodResolver(patientSchema), defaultValues: toFormValues(patient) });
   const { register, control, formState, reset } = form;
   const e = formState.errors;
 
@@ -83,6 +83,7 @@ export function PatientFormDrawer({ open, onOpenChange, patient, onSaved }: Pati
       }
     >
       <form id={formId} noValidate onSubmit={form.handleSubmit((v) => mutation.mutate(v))} className="space-y-6">
+        <p className="text-sm text-ink-muted">{t('patients.dataMinimisation')}</p>
         <FormSection title={t('patients.sectionIdentity')}>
           <FormGrid>
             <FormField label={t('patients.firstName')} error={fieldError(e.first_name)} required>
@@ -93,6 +94,12 @@ export function PatientFormDrawer({ open, onOpenChange, patient, onSaved }: Pati
             </FormField>
             <FormField label={t('patients.dob')} error={fieldError(e.date_of_birth)}>
               <DateInput max={todayISO()} {...register('date_of_birth')} />
+            </FormField>
+            <FormField label={t('patients.approxAge')} hint={t('patients.approxAgeHint')} error={fieldError(e.approx_age_years)}>
+              <Input inputMode="numeric" className="tabular" {...register('approx_age_years')} />
+            </FormField>
+            <FormField label={t('patients.occupation')} error={fieldError(e.occupation)}>
+              <Input autoComplete="off" {...register('occupation')} />
             </FormField>
             <FormField label={t('patients.bloodGroup')} error={fieldError(e.blood_group)}>
               <Select placeholder="—" options={BLOOD_GROUPS.map((b) => ({ value: b, label: b }))} {...register('blood_group')} />
@@ -150,6 +157,11 @@ export function PatientFormDrawer({ open, onOpenChange, patient, onSaved }: Pati
             <FormField label={t('patients.prakriti')}>
               <Select placeholder="—" options={PRAKRITIS.map((p) => ({ value: p, label: t(`prakriti.${p}`) }))} {...register('prakriti')} />
             </FormField>
+            {patient && (
+              <FormField label={t('patients.status')}>
+                <Select options={PATIENT_STATUSES.map((s) => ({ value: s, label: t(`patientStatus.${s}`) }))} {...register('status')} />
+              </FormField>
+            )}
             <FormField label={t('patients.assignedDoctor')}>
               <Select
                 placeholder={t('patients.unassigned')}

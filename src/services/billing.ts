@@ -2,7 +2,7 @@ import { getSupabase } from '@/lib/supabase/client';
 import type { Invoice, InvoiceDetail, InvoiceItemType, InvoiceStatus, Page, Paise, PaymentMethod, Timestamp, UUID } from '@/types/domain';
 import { unwrap, unwrapPage } from './_helpers';
 
-const LIST = 'id, clinic_id, patient_id, appointment_id, invoice_no, status, issue_date, subtotal_paise, tax_paise, discount_paise, total_paise, amount_paid_paise, notes, void_reason, created_at, patient:patients(id, first_name, last_name, patient_code, phone)';
+const LIST = 'id, clinic_id, patient_id, appointment_id, invoice_no, status, issue_date, subtotal_paise, tax_paise, discount_paise, total_paise, amount_paid_paise, amount_refunded_paise, notes, void_reason, created_at, patient:patients(id, first_name, last_name, patient_code, phone)';
 
 export interface InvoiceListParams {
   page: number;
@@ -24,12 +24,13 @@ export async function listInvoices(clinicId: UUID, params: InvoiceListParams): P
 
 export async function getInvoice(clinicId: UUID, id: UUID): Promise<InvoiceDetail> {
   const inv = unwrap<InvoiceDetail>(
-    await getSupabase().from('invoices').select(`${LIST}, items:invoice_items(*), payments(*)`).eq('clinic_id', clinicId).eq('id', id).single(),
+    await getSupabase().from('invoices').select(`${LIST}, items:invoice_items(*), payments(*), refunds(*)`).eq('clinic_id', clinicId).eq('id', id).single(),
   );
   return {
     ...inv,
     items: [...inv.items].sort((a, b) => a.position - b.position),
     payments: [...inv.payments].sort((a, b) => a.paid_at.localeCompare(b.paid_at)),
+    refunds: [...(inv.refunds ?? [])].sort((a, b) => a.refunded_at.localeCompare(b.refunded_at)),
   };
 }
 
@@ -66,6 +67,19 @@ export async function recordPayment(input: { invoiceId: UUID; amountPaise: Paise
       p_reference: input.reference,
       p_paid_at: input.paidAt,
       p_notes: input.notes,
+    }),
+  );
+}
+
+export async function recordRefund(input: { invoiceId: UUID; amountPaise: Paise; method: PaymentMethod; reason: string; paymentId: UUID | null; reference: string | null }): Promise<void> {
+  unwrap(
+    await getSupabase().rpc('record_refund', {
+      p_invoice: input.invoiceId,
+      p_amount_paise: input.amountPaise,
+      p_method: input.method,
+      p_reason: input.reason,
+      p_payment: input.paymentId,
+      p_reference: input.reference,
     }),
   );
 }

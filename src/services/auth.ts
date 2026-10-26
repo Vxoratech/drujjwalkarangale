@@ -15,8 +15,48 @@ export async function signUp(email: string, password: string, fullName: string):
   return { needsConfirmation: !data.session };
 }
 
+let userInitiatedSignOut = false;
+const EXPIRED_FLAG = 'vaidyora.sessionExpired';
+
 export async function signOut(): Promise<void> {
+  userInitiatedSignOut = true;
   await getSupabase().auth.signOut();
+}
+
+/** Called when the backend rejects the session; the sign-in page then explains why. */
+export async function expireSession(): Promise<void> {
+  try {
+    sessionStorage.setItem(EXPIRED_FLAG, '1');
+  } catch {
+    /* storage unavailable */
+  }
+  await getSupabase().auth.signOut({ scope: 'local' });
+}
+
+/** True once after an involuntary sign-out (expired or revoked session). */
+export function consumeSessionExpired(): boolean {
+  try {
+    const flagged = sessionStorage.getItem(EXPIRED_FLAG) === '1';
+    sessionStorage.removeItem(EXPIRED_FLAG);
+    return flagged;
+  } catch {
+    return false;
+  }
+}
+
+/** Distinguishes user sign-outs from token-refresh failures (see AuthProvider). */
+export function takeUserInitiatedSignOut(): boolean {
+  const value = userInitiatedSignOut;
+  userInitiatedSignOut = false;
+  return value;
+}
+
+export function markSessionExpired(): void {
+  try {
+    sessionStorage.setItem(EXPIRED_FLAG, '1');
+  } catch {
+    /* storage unavailable */
+  }
 }
 
 export async function requestPasswordReset(email: string): Promise<void> {

@@ -2,6 +2,7 @@ import type { Session, User } from '@supabase/supabase-js';
 import { useQueryClient } from '@tanstack/react-query';
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { getSupabase } from '@/lib/supabase/client';
+import { markSessionExpired, takeUserInitiatedSignOut } from '@/services/auth';
 
 type AuthState =
   | { status: 'loading'; user: null; session: null }
@@ -34,6 +35,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY') setRecovery(true);
       if (event === 'SIGNED_OUT') {
+        // A sign-out the user did not ask for means the refresh token expired or was revoked.
+        if (!takeUserInitiatedSignOut()) markSessionExpired();
         // Never leave a previous user's clinical data in memory.
         queryClient.clear();
       }

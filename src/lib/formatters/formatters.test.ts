@@ -11,6 +11,7 @@ import {
   isoToIstParts,
   maskPhone,
   rupeesToPaise,
+  setDisplayTimeZone,
   todayISO,
 } from './index';
 
@@ -46,6 +47,17 @@ describe('formatters', () => {
     const iso = istDateTimeToISO('2026-11-02', '10:30');
     expect(iso).toBe('2026-11-02T05:00:00.000Z');
     expect(isoToIstParts(iso)).toEqual({ date: '2026-11-02', time: '10:30' });
+  });
+
+  it('follows the clinic time zone when it is not IST', () => {
+    setDisplayTimeZone('Asia/Dubai');
+    try {
+      expect(formatTime('2026-03-09T04:30:00Z')).toBe('8:30 AM');
+      expect(istDateTimeToISO('2026-11-02', '10:30')).toBe('2026-11-02T06:30:00.000Z');
+      expect(isoToIstParts('2026-11-02T06:30:00.000Z')).toEqual({ date: '2026-11-02', time: '10:30' });
+    } finally {
+      setDisplayTimeZone(null);
+    }
   });
 
   it('computes age', () => {

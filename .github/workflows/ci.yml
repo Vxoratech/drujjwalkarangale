@@ -17,4 +17,6 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
+      - name: Database docs are up to date
+        run: npm run docs:db && git diff --exit-code docs/
       - run: npm run build

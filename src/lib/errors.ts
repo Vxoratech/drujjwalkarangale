@@ -30,6 +30,22 @@ const SAFE_MESSAGES: readonly RegExp[] = [
   /^Choose a date range of up to one year$/,
   /^You do not have permission to invite staff$/,
   /^Invalid login credentials$/,
+  /^Your plan allows up to \d+ (doctors|branches|staff accounts)$/,
+  /^A reason is required( to (revise a prescription|remove a document))?$/,
+  /^A reason is required for a refund$/,
+  /^Refund (amount must be positive|exceeds the amount paid)$/,
+  /^Only issued prescriptions can be revised$/,
+  /^Prescriptions are issued and revised only through the issue and revise actions$/,
+  /^Issued prescriptions can only be cancelled or revised$/,
+  /^Every template item needs a medicine, dose and frequency$/,
+  /^(Unknown examination field|Invalid value for examination field): [a-z0-9_]+$/,
+  /^Follow-up not found or already booked$/,
+  /^The file has not been uploaded$/,
+  /^Unknown time zone$/,
+  /^Consent records can only be withdrawn$/,
+  /^Withdrawn consents cannot be changed$/,
+  /^This person is already a member of the clinic$/,
+  /^No pending invitation$/,
 ];
 
 const BY_CODE: Record<string, string> = {
@@ -53,6 +69,12 @@ export function toUserMessage(error: unknown, fallback = 'Something went wrong. 
   if (message && /fetch|network/i.test(message)) return 'Unable to reach the server. Check your connection.';
   if (message?.includes('row-level security')) return BY_CODE['42501']!;
   return fallback;
+}
+
+/** Expired, missing or revoked JWT (PostgREST PGRST301/PGRST302, HTTP 401). */
+export function isAuthError(error: unknown): boolean {
+  const e = error as BackendError | null;
+  return e?.status === 401 || e?.code === 'PGRST301' || e?.code === 'PGRST302' || Boolean(e?.message && /jwt expired|invalid jwt|refresh token/i.test(e.message));
 }
 
 export function isPermissionError(error: unknown): boolean {

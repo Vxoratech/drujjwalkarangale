@@ -6,9 +6,12 @@ import { PrintableDocument } from '@/components/data-display/PrintableDocument';
 import { Button } from '@/components/ui/Button';
 import { useClinic } from '@/features/clinic/ClinicProvider';
 import { toUserMessage } from '@/lib/errors';
-import { ageFromDob, formatDate, fullName } from '@/lib/formatters';
+import { ageLabel, formatDate, fullName } from '@/lib/formatters';
 import { qk } from '@/lib/query/keys';
-import { useI18n } from '@/locales/i18n';
+import { en } from '@/locales/en';
+import { translate, useI18n, type TranslationKey } from '@/locales/i18n';
+import { mr } from '@/locales/mr';
+import type { PrescriptionItem } from '@/types/domain';
 import { getConsultation, getPrescription } from '@/services/clinical';
 import { fetchProfile } from '@/services/clinic';
 import { getPatient } from '@/services/patients';
@@ -29,8 +32,12 @@ export function PrescriptionPrintPage() {
   if (rx.isLoading || patient.isLoading) return <FullPageSpinner />;
   if (rx.isError || patient.isError || !rx.data || !patient.data) return <ErrorState message={toUserMessage(rx.error ?? patient.error)} />;
   const p = patient.data;
-  const age = ageFromDob(p.date_of_birth);
+  const age = ageLabel(p);
   const c = consult.data?.consultation;
+  // The prescription prints in its own language, independent of the UI language.
+  const dict = rx.data.language === 'mr' ? mr : en;
+  const printT = (key: TranslationKey, params?: Record<string, string | number>) => translate(dict, key, params);
+  const instructionFor = (i: PrescriptionItem) => (rx.data.language === 'mr' ? i.instructions_mr || i.instructions_en : i.instructions_en || i.instructions_mr);
 
   return (
     <div className="min-h-dvh bg-ivory px-4 py-6 print:bg-white print:p-0">
@@ -42,18 +49,19 @@ export function PrescriptionPrintPage() {
       </div>
       <PrintableDocument
         clinic={clinic}
-        title={t('prescriptions.title')}
+        title={printT('prescriptions.title')}
         meta={
           <span className="tabular">
-            {rx.data.prescription_no ?? '—'} · {formatDate(rx.data.issued_at ?? rx.data.created_at)}
+            {rx.data.prescription_no ?? '—'}
+            {rx.data.revision_number > 1 && ` (${printT('prescriptions.revisionN', { n: rx.data.revision_number })})`} · {formatDate(rx.data.issued_at ?? rx.data.created_at)}
           </span>
         }
         footer={
           <div className="flex items-end justify-between gap-6">
             <div>
-              {c?.follow_up_date && (
+              {(rx.data.follow_up_date ?? c?.follow_up_date) && (
                 <p>
-                  {t('consultations.followUp')}: <span className="tabular font-medium text-ink">{formatDate(c.follow_up_date)}</span>
+                  {printT('consultations.followUp')}: <span className="tabular font-medium text-ink">{formatDate(rx.data.follow_up_date ?? c?.follow_up_date)}</span>
                 </p>
               )}
             </div>
@@ -67,27 +75,27 @@ export function PrescriptionPrintPage() {
       >
         <section className="grid grid-cols-2 gap-x-6 gap-y-1 rounded-md bg-ivory px-4 py-3 text-xs sm:grid-cols-4 print:bg-[#f7f5ef]">
           <p>
-            <span className="text-ink-muted">{t('patients.name')}: </span>
+            <span className="text-ink-muted">{printT('patients.name')}: </span>
             <span className="font-medium">{fullName(p)}</span>
           </p>
           <p>
-            <span className="text-ink-muted">{t('patients.code')}: </span>
+            <span className="text-ink-muted">{printT('patients.code')}: </span>
             <span className="tabular">{p.patient_code}</span>
           </p>
           <p>
-            <span className="text-ink-muted">{t('patients.age')}: </span>
-            {age ?? '—'} · {t(`gender.${p.gender}`)}
+            <span className="text-ink-muted">{printT('patients.age')}: </span>
+            {age ?? '—'} · {printT(`gender.${p.gender}`)}
           </p>
           {c?.weight_kg && (
             <p>
-              <span className="text-ink-muted">{t('consultations.weight')}: </span>
+              <span className="text-ink-muted">{printT('consultations.weight')}: </span>
               <span className="tabular">{c.weight_kg}</span>
             </p>
           )}
         </section>
         {(c?.ayurvedic_diagnosis || c?.diagnosis) && (
           <p className="mt-4 text-xs">
-            <span className="font-medium">{t('consultations.ayurvedicDiagnosis')}: </span>
+            <span className="font-medium">{printT('consultations.ayurvedicDiagnosis')}: </span>
             {[c.ayurvedic_diagnosis, c.diagnosis].filter(Boolean).join(' · ')}
           </p>
         )}
@@ -98,11 +106,11 @@ export function PrescriptionPrintPage() {
           <thead>
             <tr className="border-b border-line-strong text-left text-ink-muted">
               <th className="py-2 pr-2 font-medium">#</th>
-              <th className="py-2 pr-2 font-medium">{t('prescriptions.medicine')}</th>
-              <th className="py-2 pr-2 font-medium">{t('prescriptions.dose')}</th>
-              <th className="py-2 pr-2 font-medium">{t('prescriptions.frequency')}</th>
-              <th className="py-2 pr-2 font-medium">{t('prescriptions.anupana')}</th>
-              <th className="py-2 font-medium">{t('prescriptions.duration')}</th>
+              <th className="py-2 pr-2 font-medium">{printT('prescriptions.medicine')}</th>
+              <th className="py-2 pr-2 font-medium">{printT('prescriptions.dose')}</th>
+              <th className="py-2 pr-2 font-medium">{printT('prescriptions.frequency')}</th>
+              <th className="py-2 pr-2 font-medium">{printT('prescriptions.anupana')}</th>
+              <th className="py-2 font-medium">{printT('prescriptions.duration')}</th>
             </tr>
           </thead>
           <tbody>
@@ -112,9 +120,10 @@ export function PrescriptionPrintPage() {
                 <td className="py-2 pr-2">
                   <p className="font-medium text-ink">{i.medicine_name}</p>
                   <p className="text-ink-muted">
-                    {t(`medicineForm.${i.form}`)} · {t(`doseTiming.${i.timing}`)}
+                    {printT(`medicineForm.${i.form}`)} · {printT(`medicineRoute.${i.route}`)} · {printT(`doseTiming.${i.timing}`)}
+                    {i.quantity && ` · ${printT('prescriptions.quantity')}: ${i.quantity}`}
                   </p>
-                  {i.instructions && <p className="text-ink-muted">{i.instructions}</p>}
+                  {instructionFor(i) && <p className="text-ink-muted">{instructionFor(i)}</p>}
                 </td>
                 <td className="py-2 pr-2">{i.dose}</td>
                 <td className="py-2 pr-2">{i.frequency}</td>
@@ -128,19 +137,19 @@ export function PrescriptionPrintPage() {
           <div className="mt-5 grid gap-4 text-xs sm:grid-cols-2">
             {c.pathya && (
               <div>
-                <p className="font-medium text-forest-deep">{t('consultations.pathya')}</p>
+                <p className="font-medium text-forest-deep">{printT('consultations.pathya')}</p>
                 <p className="whitespace-pre-line">{c.pathya}</p>
               </div>
             )}
             {c.apathya && (
               <div>
-                <p className="font-medium text-forest-deep">{t('consultations.apathya')}</p>
+                <p className="font-medium text-forest-deep">{printT('consultations.apathya')}</p>
                 <p className="whitespace-pre-line">{c.apathya}</p>
               </div>
             )}
           </div>
         )}
-        {rx.data.notes && <p className="mt-4 whitespace-pre-line text-xs">{rx.data.notes}</p>}
+        {rx.data.patient_instructions && <p className="mt-4 whitespace-pre-line text-xs">{rx.data.patient_instructions}</p>}
       </PrintableDocument>
     </div>
   );

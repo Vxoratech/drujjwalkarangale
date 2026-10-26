@@ -6,7 +6,6 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { EmptyState, ErrorState, SkeletonRows } from '@/components/feedback/States';
 import { notify } from '@/components/feedback/toast';
-import { FileUpload } from '@/components/forms/FileUpload';
 import { FormField } from '@/components/forms/FormField';
 import { StatusBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -19,7 +18,8 @@ import { qk } from '@/lib/query/keys';
 import { useFieldError } from '@/lib/validation/useFieldError';
 import { useI18n } from '@/locales/i18n';
 import { listInvestigations, orderInvestigation, updateInvestigation } from '@/services/clinical';
-import { getSignedUrl, uploadPatientFile } from '@/services/storage';
+import { listDocuments } from '@/services/documents';
+import { UploadDocumentDialog, useOpenDocument } from '@/features/documents/DocumentsPanel';
 import type { Investigation, InvestigationCategory, InvestigationStatus, UUID } from '@/types/domain';
 
 const orderSchema = z.object({
@@ -31,6 +31,7 @@ const orderSchema = z.object({
 const resultSchema = z.object({
   status: z.enum(['ordered', 'sample_collected', 'resulted', 'cancelled']),
   result_summary: z.string().trim().max(5000).optional().or(z.literal('')),
+  notes: z.string().trim().max(2000).optional().or(z.literal('')),
 });
 
 function OrderDialog({ open, onOpenChange, patientId, consultationId }: { open: boolean; onOpenChange: (o: boolean) => void; patientId: UUID; consultationId?: UUID | null }) {
@@ -95,26 +96,23 @@ function ResultDialog({ investigation, onOpenChange }: { investigation: Investig
   const { t } = useI18n();
   const { clinicId } = useClinic();
   const queryClient = useQueryClient();
-  const [file, setFile] = useState<File | null>(null);
   const form = useForm<z.infer<typeof resultSchema>>({
     resolver: zodResolver(resultSchema),
-    values: { status: investigation?.status ?? 'resulted', result_summary: investigation?.result_summary ?? '' },
+    values: { status: investigation?.status ?? 'resulted', result_summary: investigation?.result_summary ?? '', notes: investigation?.notes ?? '' },
   });
 
   const mutation = useMutation({
     mutationFn: async (v: z.infer<typeof resultSchema>) => {
       if (!investigation) return;
-      const path = file ? await uploadPatientFile(clinicId, investigation.patient_id, file) : undefined;
       await updateInvestigation(clinicId, investigation.id, {
         status: v.status as InvestigationStatus,
         result_summary: v.result_summary || null,
-        ...(path ? { result_file_path: path } : {}),
+        notes: v.notes || null,
       });
     },
     onSuccess: async () => {
       notify.success(t('investigations.updated'));
       await queryClient.invalidateQueries({ queryKey: [clinicId, 'investigations'] });
-      setFile(null);
       onOpenChange(false);
     },
     onError: (e) => notify.error(e),
@@ -143,7 +141,9 @@ function ResultDialog({ investigation, onOpenChange }: { investigation: Investig
         <FormField label={t('investigations.result')}>
           <Textarea rows={4} {...form.register('result_summary')} />
         </FormField>
-        <FileUpload label={t('investigations.resultFile')} value={file} onChange={setFile} hint="PDF, PNG, JPG · max 10 MB" />
+        <FormField label={t('investigations.notes')}>
+          <Textarea rows={2} {...form.register('notes')} />
+        </FormField>
       </form>
     </Modal>
   );
@@ -154,15 +154,11 @@ export function InvestigationsPanel({ patientId, consultationId, canWrite }: { p
   const { clinicId } = useClinic();
   const [ordering, setOrdering] = useState(false);
   const [editing, setEditing] = useState<Investigation | null>(null);
+  const [attaching, setAttaching] = useState<Investigation | null>(null);
+  const openDocument = useOpenDocument();
   const query = useQuery({ queryKey: qk.investigations(clinicId, { patientId }), queryFn: () => listInvestigations(clinicId, { patientId }) });
-
-  async function openFile(path: string) {
-    try {
-      window.open(await getSignedUrl(path), '_blank', 'noopener,noreferrer');
-    } catch (e) {
-      notify.error(e);
-    }
-  }
+  const docs = useQuery({ queryKey: [clinicId, 'documents', patientId], queryFn: () => listDocuments(clinicId, { patientId }) });
+  const docsFor = (id: string) => (docs.data ?? []).filter((d) => d.investigation_id === id);
 
   return (
     <div>
@@ -190,18 +186,24 @@ export function InvestigationsPanel({ patientId, consultationId, canWrite }: { p
                   {inv.resulted_at && ` · ${t('investigations.resultedOn')} ${formatDate(inv.resulted_at)}`}
                 </p>
                 {inv.result_summary && <p className="mt-1 whitespace-pre-line text-sm text-ink">{inv.result_summary}</p>}
-                {inv.result_file_path && (
-                  <button type="button" className="mt-1 inline-flex items-center gap-1 text-sm font-medium text-forest hover:underline" onClick={() => void openFile(inv.result_file_path!)}>
-                    <FileText className="size-4" aria-hidden /> {t('investigations.resultFile')}
+                {inv.notes && <p className="mt-1 whitespace-pre-line text-xs text-ink-muted">{inv.notes}</p>}
+                {docsFor(inv.id).map((d) => (
+                  <button key={d.id} type="button" className="mr-3 mt-1 inline-flex items-center gap-1 text-sm font-medium text-forest hover:underline" onClick={() => void openDocument(d)}>
+                    <FileText className="size-4" aria-hidden /> {d.title}
                   </button>
-                )}
+                ))}
               </div>
               <div className="flex items-center gap-2">
                 <StatusBadge status={inv.status} label={t(`investigationStatus.${inv.status}`)} />
                 {canWrite && inv.status !== 'cancelled' && (
-                  <Button size="sm" variant="ghost" onClick={() => setEditing(inv)}>
-                    {t('investigations.recordResult')}
-                  </Button>
+                  <>
+                    <Button size="sm" variant="ghost" onClick={() => setAttaching(inv)}>
+                      {t('investigations.attachReport')}
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setEditing(inv)}>
+                      {t('investigations.recordResult')}
+                    </Button>
+                  </>
                 )}
               </div>
             </li>
@@ -210,6 +212,17 @@ export function InvestigationsPanel({ patientId, consultationId, canWrite }: { p
       )}
       {canWrite && <OrderDialog open={ordering} onOpenChange={setOrdering} patientId={patientId} consultationId={consultationId} />}
       <ResultDialog investigation={editing} onOpenChange={(o) => !o && setEditing(null)} />
+      {attaching && (
+        <UploadDocumentDialog
+          open
+          onOpenChange={(o) => !o && setAttaching(null)}
+          patientId={patientId}
+          investigationId={attaching.id}
+          consultationId={attaching.consultation_id}
+          defaultCategory={attaching.category === 'imaging' ? 'imaging' : 'lab_report'}
+          defaultTitle={attaching.test_name}
+        />
+      )}
     </div>
   );
 }

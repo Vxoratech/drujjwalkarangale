@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, Lock, Pill, Plus, Save } from 'lucide-react';
+import { CheckCircle2, Info, Lock, Pill, Plus, Save } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -12,7 +12,7 @@ import { Badge, StatusBadge } from '@/components/ui/Badge';
 import { Button, buttonClasses } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { ConfirmDialog } from '@/components/ui/Dialog';
-import { DateInput, Input, RadioGroup, Select, Textarea } from '@/components/ui/Input';
+import { Checkbox, DateInput, Input, RadioGroup, Select, Textarea } from '@/components/ui/Input';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { useCurrentUser } from '@/features/auth/AuthProvider';
 import { useClinic } from '@/features/clinic/ClinicProvider';
@@ -26,12 +26,24 @@ import { qk } from '@/lib/query/keys';
 import { useFieldError } from '@/lib/validation/useFieldError';
 import { useI18n, type TranslationKey } from '@/locales/i18n';
 import { getAppointment } from '@/services/appointments';
-import { finalizeConsultation, getConsultation, listPrescriptions, saveConsultation } from '@/services/clinical';
+import { finalizeConsultation, getConsultation, listExamFields, listPrescriptions, saveConsultation } from '@/services/clinical';
 import { getPatient } from '@/services/patients';
-import { AGNIS, BALAS, DOSHAS, KOSHTHAS, PRAKRITIS } from '@/types/domain';
+import { AGNIS, AMA_LEVELS, BALAS, DOSHAS, KOSHTHAS, PRAKRITIS } from '@/types/domain';
 import { computeBmi, consultationSchema, toConsultationForm, toConsultationPayload, type ConsultationFormInput, type ConsultationFormValues } from './consultationSchema';
 
 const ASHTAVIDHA = ['nadi', 'mutra', 'mala', 'jihva', 'shabda', 'sparsha', 'drik', 'akriti'] as const;
+const LIFESTYLE = [
+  ['nidra', 'exam.nidra'],
+  ['appetite', 'exam.appetite'],
+  ['digestion', 'exam.digestion'],
+  ['bowel_habits', 'exam.bowelHabits'],
+] as const;
+const NARRATIVE = [
+  ['dinacharya', 'exam.dinacharya'],
+  ['lifestyle', 'exam.lifestyle'],
+  ['general_examination', 'exam.generalExamination'],
+  ['family_history', 'exam.familyHistory'],
+] as const;
 
 function RxPanel({ consultationId, patientId, canWrite }: { consultationId: string; patientId: string; canWrite: boolean }) {
   const { t } = useI18n();
@@ -78,13 +90,14 @@ export function ConsultationEditorPage() {
   const { consultationId } = useParams();
   const [search] = useSearchParams();
   const navigate = useNavigate();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const user = useCurrentUser();
   const { clinicId, can } = useClinic();
   const { names } = useDoctors();
   const queryClient = useQueryClient();
   const fieldError = useFieldError();
   const [confirmFinalize, setConfirmFinalize] = useState(false);
+  const examFields = useQuery({ queryKey: [clinicId, 'exam-fields'], queryFn: () => listExamFields(clinicId), staleTime: 5 * 60_000 });
 
   const bundle = useQuery({ queryKey: qk.consultation(clinicId, consultationId ?? ''), queryFn: () => getConsultation(clinicId, consultationId!), enabled: Boolean(consultationId) });
   const appointmentId = consultationId ? bundle.data?.consultation.appointment_id ?? null : search.get('appointment');
@@ -240,6 +253,10 @@ export function ConsultationEditorPage() {
             <Card>
               <CardHeader title={t('exam.title')} />
               <CardBody className="space-y-6 py-6">
+                <p className="flex items-start gap-2 rounded-md bg-ivory px-3 py-2 text-xs text-ink-muted">
+                  <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                  {t('exam.disclaimer')}
+                </p>
                 <FormGrid>
                   <FormField label={t('exam.prakriti')}>
                     <Select placeholder="—" options={choice(PRAKRITIS, 'prakriti')} {...register('exam.prakriti')} />
@@ -270,10 +287,26 @@ export function ConsultationEditorPage() {
                     )}
                   />
                 </FormGrid>
-                <div className="grid gap-4 lg:grid-cols-3">
+                <FormSection title={t('exam.doshaAssessment')}>
+                  <FormGrid cols={3}>
+                    {(
+                      [
+                        ['vata_score', 'exam.vataScore'],
+                        ['pitta_score', 'exam.pittaScore'],
+                        ['kapha_score', 'exam.kaphaScore'],
+                      ] as const
+                    ).map(([name, label]) => (
+                      <FormField key={name} label={t(label)} error={fieldError(e.exam?.[name])}>
+                        <Input type="number" min={0} max={10} step={1} inputMode="numeric" className="tabular" {...register(`exam.${name}`)} />
+                      </FormField>
+                    ))}
+                  </FormGrid>
+                </FormSection>
+                <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-4">
                   {(
                     [
                       ['agni', AGNIS],
+                      ['ama', AMA_LEVELS],
                       ['koshtha', KOSHTHAS],
                       ['bala', BALAS],
                     ] as const
@@ -304,19 +337,64 @@ export function ConsultationEditorPage() {
                       <Input {...register('exam.satva')} />
                     </FormField>
                   </FormGrid>
-                  <FormField label={t('exam.notes')} error={fieldError(e.exam?.notes)}>
-                    <Textarea rows={2} {...register('exam.notes')} />
-                  </FormField>
                 </FormSection>
+                <FormSection title={t('exam.lifestyleSection')}>
+                  <FormGrid cols={4}>
+                    {LIFESTYLE.map(([name, label]) => (
+                      <FormField key={name} label={t(label)} error={fieldError(e.exam?.[name])}>
+                        <Input {...register(`exam.${name}`)} />
+                      </FormField>
+                    ))}
+                  </FormGrid>
+                  <FormGrid>
+                    {NARRATIVE.map(([name, label]) => (
+                      <FormField key={name} label={t(label)} error={fieldError(e.exam?.[name])}>
+                        <Textarea rows={2} {...register(`exam.${name}`)} />
+                      </FormField>
+                    ))}
+                  </FormGrid>
+                </FormSection>
+                {(examFields.data ?? []).length > 0 && (
+                  <FormSection title={t('exam.clinicFields')}>
+                    <FormGrid cols={3}>
+                      {examFields.data!.map((f) => {
+                        const label = `${(locale === 'mr' && f.label_mr) || f.label_en}${f.unit ? ` (${f.unit})` : ''}`;
+                        const name = `exam.custom_fields.${f.key}` as const;
+                        if (f.field_type === 'boolean') return <Checkbox key={f.id} label={label} {...register(name)} />;
+                        return (
+                          <FormField key={f.id} label={label}>
+                            {f.field_type === 'select' ? (
+                              <Select placeholder="—" options={(f.options ?? []).map((o) => ({ value: o, label: o }))} {...register(name, { setValueAs: (v: string) => v || null })} />
+                            ) : (
+                              <Input
+                                inputMode={f.field_type === 'number' ? 'decimal' : undefined}
+                                className={f.field_type === 'number' ? 'tabular' : undefined}
+                                {...register(name, { setValueAs: (v: string) => (v === '' ? null : f.field_type === 'number' ? Number(v) : v) })}
+                              />
+                            )}
+                          </FormField>
+                        );
+                      })}
+                    </FormGrid>
+                  </FormSection>
+                )}
+                <FormField label={t('exam.notes')} error={fieldError(e.exam?.notes)}>
+                  <Textarea rows={2} {...register('exam.notes')} />
+                </FormField>
               </CardBody>
             </Card>
 
             <Card>
               <CardBody className="space-y-6 py-6">
                 <FormSection title={t('consultations.sectionAssessment')}>
-                  <FormField label={t('consultations.findings')} error={fieldError(e.clinical_findings)}>
-                    <Textarea rows={2} {...register('clinical_findings')} />
-                  </FormField>
+                  <FormGrid>
+                    <FormField label={t('consultations.findings')} error={fieldError(e.clinical_findings)}>
+                      <Textarea rows={2} {...register('clinical_findings')} />
+                    </FormField>
+                    <FormField label={t('consultations.assessment')} error={fieldError(e.assessment)}>
+                      <Textarea rows={2} {...register('assessment')} />
+                    </FormField>
+                  </FormGrid>
                   <FormGrid>
                     <FormField label={t('consultations.ayurvedicDiagnosis')} error={fieldError(e.ayurvedic_diagnosis)}>
                       <Input {...register('ayurvedic_diagnosis')} />

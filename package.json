@@ -17,7 +17,8 @@
     "test:watch": "vitest",
     "test:db": "vitest run --project db",
     "db:types": "supabase gen types typescript --local > src/types/database.generated.ts",
-    "seed:demo": "tsx scripts/seed-demo.ts"
+    "seed:demo": "tsx scripts/seed-demo.ts",
+    "docs:db": "tsx scripts/gen-db-docs.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

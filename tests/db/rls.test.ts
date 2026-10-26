@@ -43,6 +43,11 @@ beforeAll(async () => {
   )).id;
 
   await asOwner(db, async (tx) => {
+    // Trial plan allows 2 doctors; this clinic needs 3.
+    await tx.query(
+      `update public.tenant_subscriptions set status = 'active', plan_id = (select id from public.subscription_plans where code = 'clinic') where clinic_id = $1`,
+      [clinicA],
+    );
     await tx.query(
       `insert into public.clinic_members (clinic_id, user_id, roles) values
         ($1, $2, '{admin}'), ($1, $3, '{doctor}'), ($1, $4, '{doctor}')`,
@@ -308,7 +313,7 @@ describe('clinical records', () => {
       asUser(f.db, f.doctorA, (tx) =>
         tx.query(`update public.prescriptions set status = 'issued', issued_at = now(), prescription_no = 'FAKE' where id = $1`, [rx.id]),
       ),
-      /row-level security/,
+      /row-level security|issued and revised only through/,
     );
     const issued = await asUser(f.db, f.doctorA, (tx) =>
       one<{ prescription_no: string }>(tx, `select (public.issue_prescription($1)).prescription_no`, [rx.id]),
@@ -407,7 +412,7 @@ describe('audit log', () => {
   it('records actions and changed field names without values', async () => {
     const logs = await asUser(f.db, f.adminA, (tx) =>
       tx.query<{ action: string; entity_type: string; changed_fields: string[] }>(
-        `select action, entity_type, changed_fields from public.audit_logs where entity_type = 'invoices' order by id`,
+        `select action, entity_type, changed_fields from public.audit_events where entity_type = 'invoices' order by id`,
       ),
     );
     expect(logs.rows.length).toBeGreaterThan(0);
@@ -417,27 +422,36 @@ describe('audit log', () => {
   });
 
   it('is invisible to doctors', async () => {
-    const logs = await asUser(f.db, f.doctorA, (tx) => tx.query(`select id from public.audit_logs`));
+    const logs = await asUser(f.db, f.doctorA, (tx) => tx.query(`select id from public.audit_events`));
     expect(logs.rows).toHaveLength(0);
   });
 });
 
 describe('storage policies', () => {
-  it('scopes patient files to clinical access', async () => {
-    const path = `${f.clinicA}/patients/${f.patientOfDoctor}/report.pdf`;
-    await asUser(f.db, f.doctorA, (tx) =>
-      tx.query(`insert into storage.objects (bucket_id, name) values ('clinic-files', $1)`, [path]),
+  it('scopes patient file uploads to a pending document row of the uploader', async () => {
+    const doc = await asUser(f.db, f.doctorA, (tx) =>
+      one<{ storage_path: string }>(
+        tx,
+        `insert into public.patient_documents (clinic_id, patient_id, title, file_name, mime_type, size_bytes)
+         values ($1, $2, 'Knee X-ray', 'xray.pdf', 'application/pdf', 2048) returning storage_path`,
+        [f.clinicA, f.patientOfDoctor],
+      ),
     );
+    await asUser(f.db, f.doctorA, (tx) => tx.query(`insert into storage.objects (bucket_id, name) values ('clinic-files', $1)`, [doc.storage_path]));
+    // Arbitrary paths, even inside the patient's folder, are refused.
     await rejects(
-      asUser(f.db, f.adminA, (tx) =>
-        tx.query(`insert into storage.objects (bucket_id, name) values ('clinic-files', $1)`, [
-          `${f.clinicA}/patients/${f.patientOfDoctor}/x.pdf`,
-        ]),
+      asUser(f.db, f.doctorA, (tx) =>
+        tx.query(`insert into storage.objects (bucket_id, name) values ('clinic-files', $1)`, [`${f.clinicA}/patients/${f.patientOfDoctor}/x.pdf`]),
       ),
       /row-level security/,
     );
-    const other = await asUser(f.db, f.ownerB, (tx) => tx.query(`select id from storage.objects`));
-    expect(other.rows).toHaveLength(0);
+    await rejects(
+      asUser(f.db, f.adminA, (tx) => tx.query(`insert into storage.objects (bucket_id, name) values ('clinic-files', $1)`, [doc.storage_path])),
+      /row-level security/,
+    );
+    // No client can list patient files directly; downloads go through the Edge Function.
+    const listed = await asUser(f.db, f.doctorA, (tx) => tx.query(`select id from storage.objects`));
+    expect(listed.rows).toHaveLength(0);
   });
 });
 
@@ -505,7 +519,7 @@ describe('transactional clinical saves', () => {
 
   it('replaces draft prescription items in one transaction', async () => {
     const rxId = await asUser(f.db, f.doctorA, (tx) =>
-      one<{ id: string }>(tx, `select public.save_prescription_draft($1, null, $2, null, 'Note', $3::jsonb) as id`, [
+      one<{ id: string }>(tx, `select public.save_prescription_draft($1, null, $2, null, '{"notes":"Note"}'::jsonb, $3::jsonb) as id`, [
         f.clinicA,
         f.patientOfDoctor,
         JSON.stringify([
@@ -515,7 +529,7 @@ describe('transactional clinical saves', () => {
       ]),
     );
     await asUser(f.db, f.doctorA, (tx) =>
-      tx.query(`select public.save_prescription_draft($1, $2, $3, null, 'Updated', $4::jsonb)`, [
+      tx.query(`select public.save_prescription_draft($1, $2, $3, null, '{"notes":"Updated"}'::jsonb, $4::jsonb)`, [
         f.clinicA,
         rxId.id,
         f.patientOfDoctor,

@@ -52,6 +52,7 @@ export const STATUS_TONES: Record<string, BadgeTone> = {
   // invoices (issued maps to "Unpaid")
   partially_paid: 'warning',
   paid: 'success',
+  refunded: 'neutral',
   void: 'neutral',
   // members
   active: 'success',

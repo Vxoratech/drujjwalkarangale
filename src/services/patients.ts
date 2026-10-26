@@ -1,5 +1,5 @@
 import { getSupabase } from '@/lib/supabase/client';
-import type { Page, Patient, UUID } from '@/types/domain';
+import type { Page, Patient, PatientStatus, UUID } from '@/types/domain';
 import { escapeFilter, unwrap, unwrapPage } from './_helpers';
 
 export interface PatientListParams {
@@ -7,19 +7,21 @@ export interface PatientListParams {
   page: number;
   pageSize: number;
   sort?: { key: 'name' | 'patient_code' | 'created_at'; direction: 'asc' | 'desc' };
-  includeArchived?: boolean;
+  /** Defaults to active patients only. */
+  status?: PatientStatus | 'all';
 }
 
 export type PatientListItem = Pick<
   Patient,
-  'id' | 'patient_code' | 'first_name' | 'last_name' | 'gender' | 'date_of_birth' | 'phone' | 'city' | 'prakriti' | 'assigned_doctor_id' | 'created_at'
+  'id' | 'patient_code' | 'first_name' | 'last_name' | 'gender' | 'date_of_birth' | 'approx_age_years' | 'phone' | 'city' | 'prakriti' | 'assigned_doctor_id' | 'status' | 'created_at'
 >;
 
-const LIST_COLUMNS = 'id, patient_code, first_name, last_name, gender, date_of_birth, phone, city, prakriti, assigned_doctor_id, created_at';
+const LIST_COLUMNS = 'id, patient_code, first_name, last_name, gender, date_of_birth, approx_age_years, phone, city, prakriti, assigned_doctor_id, status, created_at';
 
 export async function listPatients(clinicId: UUID, params: PatientListParams): Promise<Page<PatientListItem>> {
   let q = getSupabase().from('patients').select(LIST_COLUMNS, { count: 'exact' }).eq('clinic_id', clinicId);
-  if (!params.includeArchived) q = q.is('archived_at', null);
+  const status = params.status ?? 'active';
+  if (status !== 'all') q = q.eq('status', status);
   const term = params.search ? escapeFilter(params.search) : '';
   if (term) {
     const digits = term.replace(/\D/g, '');
@@ -41,11 +43,17 @@ export async function searchPatients(clinicId: UUID, search: string, limit = 8):
   return page.rows;
 }
 
+/** Opens a patient record and records a `patients.viewed` audit event (server-side). */
+export async function viewPatient(id: UUID): Promise<Patient> {
+  return unwrap<Patient>(await getSupabase().rpc('view_patient', { p_patient: id }));
+}
+
+/** Plain read without an access log — for pickers and print headers. */
 export async function getPatient(clinicId: UUID, id: UUID): Promise<Patient> {
   return unwrap<Patient>(await getSupabase().from('patients').select('*').eq('clinic_id', clinicId).eq('id', id).single());
 }
 
-export type PatientInput = Omit<Patient, 'id' | 'clinic_id' | 'patient_code' | 'archived_at' | 'created_at' | 'branch_id'>;
+export type PatientInput = Omit<Patient, 'id' | 'clinic_id' | 'patient_code' | 'created_at' | 'branch_id' | 'registered_on'>;
 
 export async function createPatient(clinicId: UUID, input: PatientInput): Promise<Patient> {
   return unwrap<Patient>(await getSupabase().from('patients').insert({ ...input, clinic_id: clinicId }).select('*').single());
