@@ -6,6 +6,7 @@ Status as of 02/11/2026. "Blocker" means the item must be done before any **real
 
 | # | Item | Why it blocks | Owner | Effort |
 | --- | --- | --- | --- | --- |
+| B0 | **Restore the hosted project** (currently paused by Supabase's free tier) or move to a paid plan | Nothing can be pushed or tested against it while paused | Owner | minutes |
 | B1 | **Apply migration 0015** to the hosted project | The app sends request keys to billing functions that the hosted database doesn't have yet; invoices, payments and refunds fail | Engineering | minutes (`supabase db push`) |
 | B2 | **Deploy Edge Functions** `invite-member`, `document-url` and set `SITE_URL` / `ALLOWED_ORIGINS` | Staff invitations and opening patient documents don't work without them | Engineering | < 1 hour |
 | B3 | **Auth configuration** on the hosted project: Site URL and redirects, password policy, SMTP sender | Password reset and invite links won't land correctly; built-in email is rate-limited | Engineering | < 1 hour |
@@ -47,5 +48,5 @@ Status as of 02/11/2026. "Blocker" means the item must be done before any **real
 | Migrations from a clean database | All 15 apply in order to an empty Postgres (PGlite) in every test run. 0001–0014 applied to the hosted project with `supabase db lint` clean. |
 | Tenant isolation and RBAC | 102 database tests, including cross-clinic attacks on patients, appointments, prescriptions and documents |
 | Unit and component | 120 tests (validation, states, transitions, prescriptions, permissions, i18n, money, security guards) |
-| End-to-end (no backend) | 33 Playwright tests on desktop and Pixel 7: sign-in, Marathi rendering, responsive layout, print/PDF, axe WCAG A/AA |
+| End-to-end (no backend) | 48 Playwright tests on desktop, iPad Mini and Pixel 7: sign-in, Marathi rendering, responsive layout, print/PDF, axe WCAG A/AA |
 | Static | `tsc` strict and ESLint clean; `npm run build` succeeds |

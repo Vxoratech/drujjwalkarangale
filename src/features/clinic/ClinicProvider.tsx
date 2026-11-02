@@ -4,6 +4,7 @@ import { useCurrentUser } from '@/features/auth/AuthProvider';
 import { qk } from '@/lib/query/keys';
 import { satisfies, type Permission, type PermissionRequirement } from '@/lib/permissions/permissions';
 import { setDisplayTimeZone } from '@/lib/formatters';
+import { reportError } from '@/lib/monitoring';
 import { useI18n } from '@/locales/i18n';
 import { fetchClinic, fetchMemberships, fetchPermissions, logSessionEvent } from '@/services/clinic';
 import type { AppRole, Clinic, Membership } from '@/types/domain';
@@ -85,7 +86,8 @@ export function useClinicGate(): ClinicGateState {
   useEffect(() => {
     if (clinicId && usable && !loggedSelections.has(clinicId)) {
       loggedSelections.add(clinicId);
-      void logSessionEvent(clinicId, 'session.clinic_selected').catch(() => undefined);
+      // Best-effort, client-reported audit event: failures are reported (scrubbed), never shown.
+      void logSessionEvent(clinicId, 'session.clinic_selected').catch((e: unknown) => reportError(e));
     }
   }, [clinicId, usable]);
 

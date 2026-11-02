@@ -14,6 +14,7 @@ import { useClinic } from '@/features/clinic/ClinicProvider';
 import { cn } from '@/lib/cn';
 import { formatDateTime } from '@/lib/formatters';
 import { qk } from '@/lib/query/keys';
+import { notify } from '@/components/feedback/toast';
 import { useI18n } from '@/locales/i18n';
 import { signOut } from '@/services/auth';
 import { listNotifications, markNotificationsRead } from '@/services/notifications';
@@ -74,8 +75,12 @@ function NotificationsMenu() {
   const unread = data.filter((n) => !n.read_at);
 
   async function markAll() {
-    await markNotificationsRead(unread.map((n) => n.id));
-    await queryClient.invalidateQueries({ queryKey: qk.notifications(clinicId) });
+    try {
+      await markNotificationsRead(unread.map((n) => n.id));
+      await queryClient.invalidateQueries({ queryKey: qk.notifications(clinicId) });
+    } catch (e) {
+      notify.error(e);
+    }
   }
 
   return (
@@ -107,7 +112,9 @@ function NotificationsMenu() {
             <DropdownMenuItem
               key={n.id}
               onSelect={() => {
-                void markNotificationsRead([n.id]).then(() => queryClient.invalidateQueries({ queryKey: qk.notifications(clinicId) }));
+                void markNotificationsRead([n.id])
+                  .then(() => queryClient.invalidateQueries({ queryKey: qk.notifications(clinicId) }))
+                  .catch((e: unknown) => notify.error(e));
                 if (n.link) navigate(n.link);
               }}
             >

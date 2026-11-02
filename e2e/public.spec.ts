@@ -62,8 +62,10 @@ test.describe('responsive layouts', () => {
     });
   }
 
-  test('data tables become cards on small screens', async ({ page, isMobile }) => {
+  test('data tables become cards on small screens', async ({ page }) => {
     await page.goto('/__gallery');
+    // Cards below the md breakpoint (768 px); a table from there up (tablets included).
+    const isMobile = (page.viewportSize()?.width ?? 1280) < 768;
     // exact: the gallery's "New patients" chart is also a list.
     const table = page.getByRole('table', { name: 'Patients', exact: true });
     if (isMobile) {

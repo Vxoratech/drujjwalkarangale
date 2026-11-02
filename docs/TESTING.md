@@ -4,7 +4,7 @@
 | --- | --- | --- | --- |
 | Unit and component | Vitest + React Testing Library (jsdom) | `npm run test:unit` | `src/**/*.test.ts(x)`, `tests/unit/` |
 | Database, RLS and RPCs | Vitest + PGlite running the **real migrations** | `npm run test:db` | `tests/db/` |
-| End-to-end | Playwright (desktop Chrome + Pixel 7) | `npm run test:e2e` | `e2e/` |
+| End-to-end | Playwright (desktop Chrome, iPad Mini, Pixel 7) | `npm run test:e2e` | `e2e/` |
 | Static | ESLint (typed rules, React hooks), `tsc` strict | `npm run lint`, `npm run typecheck` | — |
 | Build | Vite production build | `npm run build` | — |
 
@@ -24,7 +24,7 @@
 | Storage access rules | `tests/db/security.test.ts`, `tenancy.test.ts`, `rls.test.ts` (upload bound to a pending row, no direct reads, no planting, purge via service role only); `services/documents.test.ts` (type, size, safe names) |
 | Currency calculations | `lib/formatters` (₹ formatting, paise conversion), `services/billing.test.ts` (client preview equals server rounding), `tests/db/*` (server totals, partial payments, refunds, cached totals equal the rows) |
 | Marathi text rendering | `src/locales/i18n.test.ts` (key parity, fallback); `tests/unit/components.test.tsx`, `prescriptions.test.tsx` (Marathi labels and clinician text); `e2e/public.spec.ts` (Devanagari font actually loaded, `lang="mr"`, translated validation) |
-| Responsive layouts | `e2e/public.spec.ts`: no horizontal scrolling on key pages at 1280 px and on Pixel 7; tables turn into cards on phones |
+| Responsive layouts | `e2e/public.spec.ts`: no horizontal scrolling on key pages at desktop, tablet (iPad Mini) and phone (Pixel 7) sizes; tables turn into cards on phones |
 | Print output | `e2e/print.spec.ts` (A4 width, no clipped cells, rows not split across pages, 14-item Marathi prescription paginates to 2–4 pages, short one fits on 1, private notes never printed); `prescriptions.test.tsx` (print language independent of UI language) |
 | Security guards | `tests/unit/security-guards.test.ts`, `hardcoded-strings.test.ts`, `migrations.test.ts` |
 

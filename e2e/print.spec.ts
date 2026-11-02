@@ -5,8 +5,8 @@ import { expect, test } from '@playwright/test';
  * (a 14-medicine Marathi prescription with long instructions).
  */
 test.describe('prescription print output', () => {
-  test.beforeEach(({ browserName, isMobile }) => {
-    test.skip(browserName !== 'chromium' || isMobile, 'PDF rendering is checked once, on desktop Chromium');
+  test.beforeEach(({ browserName }, testInfo) => {
+    test.skip(browserName !== 'chromium' || testInfo.project.name !== 'desktop', 'PDF rendering is checked once, on desktop Chromium');
   });
 
   test('hides screen-only chrome and fits A4 width without clipping', async ({ page }) => {
