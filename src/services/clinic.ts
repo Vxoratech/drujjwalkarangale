@@ -110,7 +110,7 @@ export async function inviteMember(input: { clinicId: UUID; email: string; fullN
     // FunctionsHttpError carries the JSON body in `context`; surface our safe message only.
     const ctx = (error as { context?: Response }).context;
     const body = ctx ? ((await ctx.json().catch(() => null)) as { error?: string } | null) : null;
-    throw { message: body?.error ?? 'Could not send the invitation', code: ctx?.status === 403 ? '42501' : ctx?.status === 422 ? 'P0001' : undefined };
+    throw { message: body?.error ?? 'Could not send the invitation', code: ctx?.status === 403 ? '42501' : ctx?.status === 422 ? 'P0001' : ctx?.status === 429 ? '54000' : undefined };
   }
 }
 

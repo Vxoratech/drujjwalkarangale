@@ -730,6 +730,7 @@
 - **Check** `patient_documents_delete_reason_check`: CHECK ((char_length(delete_reason) <= 300))
 - **Check** `patient_documents_file_name_check`: CHECK (((char_length(file_name) >= 1) AND (char_length(file_name) <= 200)))
 - **Check** `patient_documents_mime_type_check`: CHECK ((mime_type = ANY (ARRAY['application/pdf'::text, 'image/png'::text, 'image/jpeg'::text, 'image/webp'::text])))
+- **Check** `patient_documents_safe_file_name`: CHECK (((file_name !~ '[/\\[:cntrl:]]'::text) AND (file_name !~ '^\.'::text)))
 - **Check** `patient_documents_size_bytes_check`: CHECK (((size_bytes >= 1) AND (size_bytes <= 10485760)))
 - **Check** `patient_documents_title_check`: CHECK (((char_length(title) >= 1) AND (char_length(title) <= 160)))
 - **FK** `patient_documents_clinic_id_fkey`: FOREIGN KEY (clinic_id) REFERENCES clinics(id) ON DELETE RESTRICT
@@ -1749,6 +1750,7 @@
 | `updated_at` | timestamp with time zone | no | now() |
 | `amount_refunded_paise` | bigint | no | 0 |
 | `updated_by` | uuid | yes |  |
+| `idempotency_key` | uuid | yes |  |
 
 </details>
 
@@ -1783,6 +1785,7 @@
 - CREATE INDEX invoices_clinic_date_idx USING btree (clinic_id, issue_date DESC)
 - CREATE UNIQUE INDEX invoices_clinic_id_invoice_no_key USING btree (clinic_id, invoice_no)
 - CREATE UNIQUE INDEX invoices_id_clinic_id_key USING btree (id, clinic_id)
+- CREATE UNIQUE INDEX invoices_idempotency_key USING btree (clinic_id, idempotency_key) WHERE (idempotency_key IS NOT NULL)
 - CREATE INDEX invoices_outstanding_idx USING btree (clinic_id) WHERE (status = ANY (ARRAY['issued'::invoice_status, 'partially_paid'::invoice_status]))
 - CREATE INDEX invoices_patient_idx USING btree (patient_id)
 - CREATE UNIQUE INDEX invoices_pkey USING btree (id)
@@ -1828,6 +1831,7 @@
 | `reconciliation_note` | text | yes |  |
 | `reconciled_at` | timestamp with time zone | yes |  |
 | `reconciled_by` | uuid | yes |  |
+| `idempotency_key` | uuid | yes |  |
 
 </details>
 
@@ -1854,6 +1858,7 @@
 
 - CREATE INDEX payments_clinic_paid_idx USING btree (clinic_id, paid_at DESC)
 - CREATE UNIQUE INDEX payments_id_clinic_key USING btree (id, clinic_id)
+- CREATE UNIQUE INDEX payments_idempotency_key USING btree (clinic_id, idempotency_key) WHERE (idempotency_key IS NOT NULL)
 - CREATE INDEX payments_invoice_idx USING btree (invoice_id)
 - CREATE UNIQUE INDEX payments_pkey USING btree (id)
 - CREATE UNIQUE INDEX payments_receipt_unique USING btree (clinic_id, receipt_no)
@@ -1896,6 +1901,7 @@
 | `refunded_at` | timestamp with time zone | no | now() |
 | `refunded_by` | uuid | yes |  |
 | `created_at` | timestamp with time zone | no | now() |
+| `idempotency_key` | uuid | yes |  |
 
 </details>
 
@@ -1917,6 +1923,7 @@
 
 - CREATE INDEX refunds_clinic_date_idx USING btree (clinic_id, refunded_at DESC)
 - CREATE UNIQUE INDEX refunds_clinic_id_refund_no_key USING btree (clinic_id, refund_no)
+- CREATE UNIQUE INDEX refunds_idempotency_key USING btree (clinic_id, idempotency_key) WHERE (idempotency_key IS NOT NULL)
 - CREATE INDEX refunds_invoice_idx USING btree (invoice_id)
 - CREATE UNIQUE INDEX refunds_pkey USING btree (id)
 
@@ -2058,8 +2065,9 @@
 | `clinic_overview` | definer | p_clinic uuid, p_from date, p_to date |
 | `clinic_trends` | definer | p_clinic uuid, p_from date, p_to date, p_bucket text |
 | `confirm_document_upload` | definer | p_document uuid |
+| `consume_rate_limit` | definer | p_key text, p_limit integer, p_window_seconds integer |
 | `create_clinic` | definer | p_name text, p_city text, p_phone text, p_is_practitioner boolean |
-| `create_invoice` | definer | p_clinic uuid, p_patient uuid, p_items jsonb, p_discount_paise bigint, p_notes text, p_appointment uuid, p_branch uuid |
+| `create_invoice` | definer | p_clinic uuid, p_patient uuid, p_items jsonb, p_discount_paise bigint, p_notes text, p_appointment uuid, p_branch uuid, p_idempotency_key uuid |
 | `dashboard_summary` | invoker | p_clinic uuid |
 | `delete_document` | definer | p_document uuid, p_reason text |
 | `doctor_overview` | invoker | p_clinic uuid |
@@ -2075,10 +2083,11 @@
 | `platform_assign_plan` | definer | p_clinic uuid, p_plan_code text, p_status subscription_status, p_period_end timestamp with time zone |
 | `platform_list_clinics` | definer |  |
 | `platform_set_clinic_status` | definer | p_clinic uuid, p_status clinic_status, p_reason text |
+| `purge_abandoned_uploads` | definer | p_older_than interval |
 | `purge_expired_audit_events` | definer |  |
 | `reconcile_payment` | definer | p_payment uuid, p_reconciled boolean, p_settlement_reference text, p_note text |
-| `record_payment` | definer | p_invoice uuid, p_amount_paise bigint, p_method payment_method, p_reference text, p_paid_at timestamp with time zone, p_notes text |
-| `record_refund` | definer | p_invoice uuid, p_amount_paise bigint, p_method payment_method, p_reason text, p_payment uuid, p_reference text |
+| `record_payment` | definer | p_invoice uuid, p_amount_paise bigint, p_method payment_method, p_reference text, p_paid_at timestamp with time zone, p_notes text, p_idempotency_key uuid |
+| `record_refund` | definer | p_invoice uuid, p_amount_paise bigint, p_method payment_method, p_reason text, p_payment uuid, p_reference text, p_idempotency_key uuid |
 | `revenue_report` | invoker | p_clinic uuid, p_from date, p_to date |
 | `revise_prescription` | definer | p_prescription uuid, p_reason text |
 | `save_consultation` | invoker | p_clinic uuid, p_id uuid, p_data jsonb, p_exam jsonb |

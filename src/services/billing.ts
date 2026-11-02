@@ -44,7 +44,7 @@ export interface InvoiceLineInput {
 
 export async function createInvoice(
   clinicId: UUID,
-  input: { patientId: UUID; items: InvoiceLineInput[]; discountPaise: Paise; notes: string | null; appointmentId?: UUID | null },
+  input: { patientId: UUID; items: InvoiceLineInput[]; discountPaise: Paise; notes: string | null; appointmentId?: UUID | null; idempotencyKey: UUID },
 ): Promise<Invoice> {
   return unwrap<Invoice>(
     await getSupabase().rpc('create_invoice', {
@@ -54,11 +54,24 @@ export async function createInvoice(
       p_discount_paise: input.discountPaise,
       p_notes: input.notes,
       p_appointment: input.appointmentId ?? null,
+      p_idempotency_key: input.idempotencyKey,
     }),
   );
 }
 
-export async function recordPayment(input: { invoiceId: UUID; amountPaise: Paise; method: PaymentMethod; reference: string | null; paidAt: Timestamp; notes: string | null }): Promise<void> {
+/**
+ * `idempotencyKey` must be generated once per user action and reused on retry:
+ * the server then records the payment at most once.
+ */
+export async function recordPayment(input: {
+  invoiceId: UUID;
+  amountPaise: Paise;
+  method: PaymentMethod;
+  reference: string | null;
+  paidAt: Timestamp;
+  notes: string | null;
+  idempotencyKey: UUID;
+}): Promise<void> {
   unwrap(
     await getSupabase().rpc('record_payment', {
       p_invoice: input.invoiceId,
@@ -67,11 +80,20 @@ export async function recordPayment(input: { invoiceId: UUID; amountPaise: Paise
       p_reference: input.reference,
       p_paid_at: input.paidAt,
       p_notes: input.notes,
+      p_idempotency_key: input.idempotencyKey,
     }),
   );
 }
 
-export async function recordRefund(input: { invoiceId: UUID; amountPaise: Paise; method: PaymentMethod; reason: string; paymentId: UUID | null; reference: string | null }): Promise<void> {
+export async function recordRefund(input: {
+  invoiceId: UUID;
+  amountPaise: Paise;
+  method: PaymentMethod;
+  reason: string;
+  paymentId: UUID | null;
+  reference: string | null;
+  idempotencyKey: UUID;
+}): Promise<void> {
   unwrap(
     await getSupabase().rpc('record_refund', {
       p_invoice: input.invoiceId,
@@ -80,6 +102,7 @@ export async function recordRefund(input: { invoiceId: UUID; amountPaise: Paise;
       p_reason: input.reason,
       p_payment: input.paymentId,
       p_reference: input.reference,
+      p_idempotency_key: input.idempotencyKey,
     }),
   );
 }

@@ -107,7 +107,12 @@ export const routes: RouteObject[] = [
       { path: '/auth/sign-up', element: <SignUpPage /> },
       { path: '/auth/forgot', element: <ForgotPasswordPage /> },
       // Dev-only component gallery; tree-shaken from production builds.
-      ...(import.meta.env.DEV ? [{ path: '/__gallery', element: page(() => import('@/dev/Gallery'), 'Gallery') }] : []),
+      ...(import.meta.env.DEV
+        ? [
+            { path: '/__gallery', element: page(() => import('@/dev/Gallery'), 'Gallery') },
+            { path: '/__fixtures/prescription', element: page(() => import('@/dev/PrintFixture'), 'PrintFixture') },
+          ]
+        : []),
       {
         element: <RequireAuth />,
         children: [

@@ -13,7 +13,7 @@ import { formatDateTime } from '@/lib/formatters';
 import { qk } from '@/lib/query/keys';
 import { useI18n, type TranslationKey } from '@/locales/i18n';
 import { fetchProfileNames } from '@/services/clinic';
-import { listAuditEvents } from '@/services/reports';
+import { listAuditEvents } from '@/services/audit';
 import type { AuditAction, AuditEvent } from '@/types/domain';
 
 const PAGE_SIZE = 25;

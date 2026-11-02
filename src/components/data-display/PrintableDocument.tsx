@@ -35,7 +35,7 @@ export function PrintableDocument({ clinic, title, meta, children, footer, langu
       </div>
       <div className="mt-4">{children}</div>
       {footer && <footer className="mt-10 border-t border-line pt-4 text-xs text-ink-muted">{footer}</footer>}
-      <p className="mt-6 text-center text-[10px] text-ink-subtle">{translate(dict, 'print.generatedWith')}</p>
+      <p className="mt-6 text-center text-[10px] text-ink-muted">{translate(dict, 'print.generatedWith')}</p>
     </article>
   );
 }

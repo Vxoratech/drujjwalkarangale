@@ -2,6 +2,7 @@ import { Compass } from 'lucide-react';
 import { Link, useRouteError } from 'react-router-dom';
 import { EmptyState, ErrorState } from '@/components/feedback/States';
 import { buttonClasses } from '@/components/ui/Button';
+import { reportError } from '@/lib/monitoring';
 import { useI18n } from '@/locales/i18n';
 
 export function NotFoundPage() {
@@ -22,8 +23,8 @@ export function NotFoundPage() {
 
 export function RouteErrorBoundary() {
   const error = useRouteError();
-  // Log a generic marker only — error objects may carry record data.
-  console.error('Route error', error instanceof Error ? error.name : typeof error);
+  // Scrubbed report only — error objects may carry record data.
+  reportError(error, 'route');
   return (
     <div className="flex min-h-dvh items-center justify-center bg-ivory">
       <ErrorState onRetry={() => window.location.reload()} />

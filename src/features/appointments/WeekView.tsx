@@ -51,7 +51,7 @@ export function WeekView({
               <span className={cn('tabular text-xs', d === today ? 'rounded bg-forest px-1.5 text-ink-inverse' : 'text-ink-muted')}>{d.slice(8, 10)}/{d.slice(5, 7)}</span>
             </button>
             {items.length === 0 ? (
-              <p className="px-1 text-xs text-ink-subtle">{t('appointments.noneShort')}</p>
+              <p className="px-1 text-xs text-ink-muted">{t('appointments.noneShort')}</p>
             ) : (
               <ul className="space-y-1.5">
                 {items.map((a) => (

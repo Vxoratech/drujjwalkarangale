@@ -47,6 +47,9 @@ const SAFE_MESSAGES: readonly RegExp[] = [
   /^Withdrawn consents cannot be changed$/,
   /^This person is already a member of the clinic$/,
   /^No pending invitation$/,
+  /^Too many records opened in a short time\. Please wait a few minutes\.$/,
+  /^Too many (invitations|requests)\. Please try again later\.$/,
+  /^This request key was already used for a different (payment|refund|invoice)$/,
 ];
 
 
@@ -58,6 +61,7 @@ const BY_CODE: Record<string, TranslationKey> = {
   '23P01': 'errors.overlap',
   P0002: 'errors.notFound',
   PGRST116: 'errors.notFoundOrDenied',
+  '54000': 'errors.rateLimited',
 };
 
 /**

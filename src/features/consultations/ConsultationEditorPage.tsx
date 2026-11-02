@@ -16,6 +16,7 @@ import { Checkbox, DateInput, Input, RadioGroup, Select, Textarea } from '@/comp
 import { PageHeader } from '@/components/ui/PageHeader';
 import { useCurrentUser } from '@/features/auth/AuthProvider';
 import { useClinic } from '@/features/clinic/ClinicProvider';
+import { DocumentsPanel } from '@/features/documents/DocumentsPanel';
 import { InvestigationsPanel } from '@/features/investigations/InvestigationsPanel';
 import { useDoctors } from '@/hooks/useDoctors';
 import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
@@ -236,8 +237,10 @@ export function ConsultationEditorPage() {
 
   useEffect(() => {
     if (consultationId && bundle.data) reset(toConsultationForm(bundle.data.consultation, bundle.data.examination));
-    else if (!consultationId && patient.data) reset({ ...toConsultationForm(null, null, patient.data.prakriti), chief_complaint: appointment.data?.reason ?? '' });
-  }, [consultationId, bundle.data, patient.data, appointment.data, reset]);
+    // Prefill a new consultation only while it is untouched, so late-arriving
+    // patient or appointment data never wipes what the doctor has typed.
+    else if (!consultationId && patient.data && JSON.stringify(form.getValues()) === JSON.stringify(toConsultationForm())) reset({ ...toConsultationForm(null, null, patient.data.prakriti), chief_complaint: appointment.data?.reason ?? '' });
+  }, [consultationId, bundle.data, patient.data, appointment.data, reset, form]);
 
   useUnsavedChangesGuard(formState.isDirty && !readOnly && !formState.isSubmitting, t('consultations.unsaved'));
 
@@ -323,6 +326,35 @@ export function ConsultationEditorPage() {
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
         <form noValidate onSubmit={(ev) => ev.preventDefault()}>
           <fieldset disabled={readOnly || save.isPending} className="space-y-6">
+            <Card>
+              <CardHeader
+                title={tb('history.title')}
+                actions={
+                  <Link to={`/patients/${p.id}`} className="text-sm font-medium text-forest hover:underline">
+                    {t('history.openProfile')}
+                  </Link>
+                }
+              />
+              <CardBody>
+                <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+                  {(
+                    [
+                      ['patients.name', fullName(p)],
+                      ['patients.age', [age !== '—' ? `${age} y` : null, t(`gender.${p.gender}`)].filter(Boolean).join(' · ')],
+                      ['patients.occupation', p.occupation],
+                      ['patients.phone', p.phone],
+                      ['patients.address', [p.address_line, p.city].filter(Boolean).join(', ')],
+                      ['patients.chronicConditions', p.chronic_conditions],
+                    ] as const
+                  ).map(([label, value]) => (
+                    <div key={label} className="min-w-0">
+                      <dt className="text-xs text-ink-muted">{tb(label)}</dt>
+                      <dd className={label === 'patients.phone' ? 'tabular' : undefined}>{value || '—'}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </CardBody>
+            </Card>
             <Card>
               <CardBody className="space-y-6 py-6">
                 <FormSection title={tb('consultations.sectionHistory')}>
@@ -605,6 +637,12 @@ export function ConsultationEditorPage() {
                 <CardHeader title={t('investigations.title')} />
                 <CardBody>
                   <InvestigationsPanel patientId={p.id} consultationId={consultationId} canWrite={can('clinical.write')} />
+                </CardBody>
+              </Card>
+              <Card>
+                <CardHeader title={t('history.attachments')} />
+                <CardBody>
+                  <DocumentsPanel patientId={p.id} canWrite={can('clinical.write')} />
                 </CardBody>
               </Card>
             </>

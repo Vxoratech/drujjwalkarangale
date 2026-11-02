@@ -12,7 +12,7 @@ import { clinicContext } from './render';
 vi.mock('@/features/auth/AuthProvider', () => ({
   useCurrentUser: () => ({ id: 'u1', email: 'dr.meera@demo.vaidyora.test', user_metadata: { full_name: 'Dr. Meera Joshi' } }),
 }));
-vi.mock('@/services/reports', () => ({ listNotifications: vi.fn().mockResolvedValue([]), markNotificationsRead: vi.fn() }));
+vi.mock('@/services/notifications', () => ({ listNotifications: vi.fn().mockResolvedValue([]), markNotificationsRead: vi.fn() }));
 
 const ADMIN: Permission[] = ['patients.read_all', 'patients.create', 'appointments.read_all', 'appointments.manage', 'billing.read', 'billing.create', 'reports.read', 'settings.manage', 'users.read', 'users.manage', 'audit.read'];
 const DOCTOR: Permission[] = ['patients.read_assigned', 'patients.create', 'appointments.read_own', 'appointments.update_own', 'clinical.read_assigned', 'clinical.write'];

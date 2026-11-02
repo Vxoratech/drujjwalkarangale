@@ -9,6 +9,8 @@ export interface PatientListParams {
   sort?: { key: 'name' | 'patient_code' | 'created_at'; direction: 'asc' | 'desc' };
   /** Defaults to active patients only. */
   status?: PatientStatus | 'all';
+  /** Assigned doctor; 'none' = unassigned. */
+  doctorId?: UUID | 'none';
 }
 
 export type PatientListItem = Pick<
@@ -22,6 +24,8 @@ export async function listPatients(clinicId: UUID, params: PatientListParams): P
   let q = getSupabase().from('patients').select(LIST_COLUMNS, { count: 'exact' }).eq('clinic_id', clinicId);
   const status = params.status ?? 'active';
   if (status !== 'all') q = q.eq('status', status);
+  if (params.doctorId === 'none') q = q.is('assigned_doctor_id', null);
+  else if (params.doctorId) q = q.eq('assigned_doctor_id', params.doctorId);
   const term = params.search ? escapeFilter(params.search) : '';
   if (term) {
     const digits = term.replace(/\D/g, '');
@@ -45,7 +49,10 @@ export async function searchPatients(clinicId: UUID, search: string, limit = 8):
 
 /** Opens a patient record and records a `patients.viewed` audit event (server-side). */
 export async function viewPatient(id: UUID): Promise<Patient> {
-  return unwrap<Patient>(await getSupabase().rpc('view_patient', { p_patient: id }));
+  const row = unwrap<Patient | null>(await getSupabase().rpc('view_patient', { p_patient: id }));
+  // The server returns no row (and audits the refusal) when the bulk-access brake trips.
+  if (!row || !row.id) throw { code: '54000', message: 'Too many records opened in a short time. Please wait a few minutes.' };
+  return row;
 }
 
 /** Plain read without an access log — for pickers and print headers. */

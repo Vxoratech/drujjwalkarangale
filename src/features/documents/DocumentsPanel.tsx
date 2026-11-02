@@ -38,16 +38,24 @@ export function UploadDocumentDialog({
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState(defaultTitle);
   const [category, setCategory] = useState<DocumentCategory>(defaultCategory);
+  const [progress, setProgress] = useState<number | null>(null);
 
   const mutation = useMutation({
-    mutationFn: () => uploadDocument(clinicId, { patientId, file: file!, title: title.trim() || file!.name, category, investigationId, consultationId }),
+    mutationFn: () => {
+      setProgress(0);
+      return uploadDocument(clinicId, { patientId, file: file!, title: title.trim() || file!.name, category, investigationId, consultationId }, setProgress);
+    },
     onSuccess: async () => {
       notify.success(t('documents.uploaded'));
       await queryClient.invalidateQueries({ queryKey: [clinicId, 'documents'] });
       setFile(null);
+      setProgress(null);
       onOpenChange(false);
     },
-    onError: (e) => notify.error(e),
+    onError: (e) => {
+      setProgress(null);
+      notify.error(e, t('upload.failed'));
+    },
   });
 
   return (
@@ -73,7 +81,22 @@ export function UploadDocumentDialog({
         <FormField label={t('documents.category')}>
           <Select value={category} onChange={(e) => setCategory(e.target.value as DocumentCategory)} options={DOCUMENT_CATEGORIES.map((c) => ({ value: c, label: t(`documentCategory.${c}`) }))} />
         </FormField>
-        <FileUpload label={t('documents.file')} value={file} onChange={setFile} />
+        <FileUpload label={t('documents.file')} value={file} onChange={setFile} disabled={mutation.isPending} />
+        {progress !== null && (
+          <div className="space-y-1" aria-live="polite">
+            <div
+              role="progressbar"
+              aria-label={t('upload.progressLabel')}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(progress * 100)}
+              className="h-2 w-full overflow-hidden rounded-full bg-sage"
+            >
+              <div className="h-full rounded-full bg-forest transition-[width] duration-base" style={{ width: `${Math.round(progress * 100)}%` }} />
+            </div>
+            <p className="tabular text-xs text-ink-muted">{progress < 1 ? t('upload.progress', { percent: Math.round(progress * 100) }) : t('upload.finishing')}</p>
+          </div>
+        )}
       </div>
     </Modal>
   );

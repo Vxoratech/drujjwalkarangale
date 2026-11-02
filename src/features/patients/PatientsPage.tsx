@@ -25,7 +25,7 @@ const PAGE_SIZE = 20;
 export function PatientsPage() {
   const { t } = useI18n();
   const { clinicId, can } = useClinic();
-  const { names } = useDoctors();
+  const { names, doctors } = useDoctors();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const [search, setSearch] = useState(params.get('q') ?? '');
@@ -33,6 +33,7 @@ export function PatientsPage() {
   const [sort, setSort] = useState<SortState>({ key: 'created_at', direction: 'desc' });
   const [formOpen, setFormOpen] = useState(params.get('new') === '1');
   const [status, setStatus] = useState<PatientStatus | 'all'>('active');
+  const [doctorFilter, setDoctorFilter] = useState('');
   const debounced = useDebouncedValue(search);
 
   useEffect(() => setPage(1), [debounced]);
@@ -45,7 +46,7 @@ export function PatientsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debounced]);
 
-  const listParams: PatientListParams = { search: debounced, page, pageSize: PAGE_SIZE, sort: sort as PatientListParams['sort'], status };
+  const listParams: PatientListParams = { search: debounced, page, pageSize: PAGE_SIZE, sort: sort as PatientListParams['sort'], status, doctorId: (doctorFilter || undefined) as PatientListParams['doctorId'] };
   const query = useQuery({ queryKey: qk.patients(clinicId, listParams), queryFn: () => listPatients(clinicId, listParams), placeholderData: keepPreviousData });
 
   const columns: Column<PatientListItem>[] = [
@@ -70,7 +71,7 @@ export function PatientsPage() {
       ),
     },
     { key: 'phone', header: t('patients.phone'), cell: (p) => <span className="tabular text-ink-muted">{maskPhone(p.phone)}</span> },
-    { key: 'prakriti', header: t('patients.prakriti'), hideBelow: 'lg', cell: (p) => (p.prakriti ? <Badge tone="forest">{t(`prakriti.${p.prakriti}`)}</Badge> : <span className="text-ink-subtle">—</span>) },
+    { key: 'prakriti', header: t('patients.prakriti'), hideBelow: 'lg', cell: (p) => (p.prakriti ? <Badge tone="forest">{t(`prakriti.${p.prakriti}`)}</Badge> : <span className="text-ink-muted">—</span>) },
     { key: 'doctor', header: t('patients.assignedDoctor'), hideBelow: 'lg', cell: (p) => <span className="text-ink-muted">{p.assigned_doctor_id ? names.get(p.assigned_doctor_id) ?? '—' : t('patients.unassigned')}</span> },
     { key: 'created_at', header: t('patients.registered'), sortable: true, align: 'right', cell: (p) => <span className="tabular text-ink-muted">{formatDate(p.created_at)}</span> },
   ];
@@ -93,7 +94,21 @@ export function PatientsPage() {
           <div className="w-full sm:max-w-sm">
             <SearchInput value={search} onValueChange={setSearch} placeholder={t('patients.searchPlaceholder')} aria-label={t('patients.searchPlaceholder')} clearLabel={t('common.clearFilters')} />
           </div>
-          <div className="sm:ml-auto sm:min-w-[10rem]">
+          {can('patients.read_all') && (
+            <div className="sm:ml-auto sm:min-w-[11rem]">
+              <Select
+                aria-label={t('patients.assignedDoctor')}
+                value={doctorFilter}
+                onChange={(e) => {
+                  setDoctorFilter(e.target.value);
+                  setPage(1);
+                }}
+                placeholder={t('appointments.allDoctors')}
+                options={[{ value: 'none', label: t('patients.unassigned') }, ...doctors.map((d) => ({ value: d.user_id, label: d.full_name }))]}
+              />
+            </div>
+          )}
+          <div className="sm:min-w-[10rem]">
             <Select
               aria-label={t('patients.statusFilter')}
               value={status}

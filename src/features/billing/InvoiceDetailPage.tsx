@@ -17,6 +17,7 @@ import { useClinic } from '@/features/clinic/ClinicProvider';
 import { isPermissionError, toUserMessage } from '@/lib/errors';
 import { formatDate, formatDateTime, formatINR, fullName, paiseToRupees, todayISO } from '@/lib/formatters';
 import { qk } from '@/lib/query/keys';
+import { useIdempotencyKey } from '@/hooks/useIdempotencyKey';
 import { useFieldError } from '@/lib/validation/useFieldError';
 import { useI18n } from '@/locales/i18n';
 import { getInvoice, recordPayment, recordRefund, voidInvoice } from '@/services/billing';
@@ -30,6 +31,7 @@ function PaymentModal({ invoice, open, onOpenChange }: { invoice: InvoiceDetail;
   const queryClient = useQueryClient();
   const fieldError = useFieldError();
   const balance = invoice.total_paise - invoice.amount_paid_paise;
+  const idem = useIdempotencyKey();
   const form = useForm<PaymentFormInput, unknown, PaymentFormValues>({
     resolver: zodResolver(paymentSchema),
     values: { amount: String(paiseToRupees(balance)), method: 'upi', reference: '', paid_on: todayISO(), notes: '' },
@@ -39,10 +41,11 @@ function PaymentModal({ invoice, open, onOpenChange }: { invoice: InvoiceDetail;
     mutationFn: (v: PaymentFormValues) => {
       // Payments dated today use the current time; back-dated ones use midday IST.
       const paidAt = v.paid_on === todayISO() ? new Date().toISOString() : new Date(`${v.paid_on}T12:00:00+05:30`).toISOString();
-      return recordPayment({ invoiceId: invoice.id, amountPaise: v.amount, method: v.method, reference: v.reference || null, paidAt, notes: v.notes || null });
+      return recordPayment({ invoiceId: invoice.id, amountPaise: v.amount, method: v.method, reference: v.reference || null, paidAt, notes: v.notes || null, idempotencyKey: idem.key });
     },
     onSuccess: async () => {
       notify.success(t('billing.paymentRecorded'));
+      idem.renew();
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: qk.invoice(clinicId, invoice.id) }),
         queryClient.invalidateQueries({ queryKey: [clinicId, 'invoices'] }),
@@ -100,6 +103,7 @@ function RefundModal({ invoice, open, onOpenChange }: { invoice: InvoiceDetail; 
   const queryClient = useQueryClient();
   const fieldError = useFieldError();
   const refundable = invoice.amount_paid_paise - invoice.amount_refunded_paise;
+  const idem = useIdempotencyKey();
   const form = useForm<RefundFormInput, unknown, RefundFormValues>({
     resolver: zodResolver(refundSchema),
     values: { amount: String(paiseToRupees(refundable)), method: invoice.payments.at(-1)?.method ?? 'cash', reason: '', payment_id: '', reference: '' },
@@ -107,10 +111,19 @@ function RefundModal({ invoice, open, onOpenChange }: { invoice: InvoiceDetail; 
   const mutation = useMutation({
     mutationFn: (v: RefundFormValues) => {
       if (v.amount > refundable) throw { message: 'Refund exceeds the amount paid' };
-      return recordRefund({ invoiceId: invoice.id, amountPaise: v.amount, method: v.method, reason: v.reason, paymentId: v.payment_id || null, reference: v.reference || null });
+      return recordRefund({
+        invoiceId: invoice.id,
+        amountPaise: v.amount,
+        method: v.method,
+        reason: v.reason,
+        paymentId: v.payment_id || null,
+        reference: v.reference || null,
+        idempotencyKey: idem.key,
+      });
     },
     onSuccess: async () => {
       notify.success(t('billing.refundRecorded'));
+      idem.renew();
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: qk.invoice(clinicId, invoice.id) }),
         queryClient.invalidateQueries({ queryKey: [clinicId, 'invoices'] }),

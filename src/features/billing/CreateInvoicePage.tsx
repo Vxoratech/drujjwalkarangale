@@ -14,6 +14,7 @@ import { useClinic } from '@/features/clinic/ClinicProvider';
 import { PatientPicker } from '@/features/patients/PatientPicker';
 import { formatINR, paiseToRupees, rupeesToPaise } from '@/lib/formatters';
 import { useFieldError } from '@/lib/validation/useFieldError';
+import { useIdempotencyKey } from '@/hooks/useIdempotencyKey';
 import { useI18n } from '@/locales/i18n';
 import { createInvoice, previewTotals } from '@/services/billing';
 import { INVOICE_ITEM_TYPES } from '@/types/domain';
@@ -26,6 +27,8 @@ export function CreateInvoicePage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const fieldError = useFieldError();
+  // One key for this invoice form: a double submit or retry creates one invoice.
+  const idem = useIdempotencyKey();
 
   const form = useForm<InvoiceFormInput, unknown, InvoiceFormValues>({
     resolver: zodResolver(invoiceSchema),
@@ -52,6 +55,7 @@ export function CreateInvoicePage() {
         discountPaise: v.discount,
         notes: v.notes || null,
         appointmentId: search.get('appointment'),
+        idempotencyKey: idem.key,
         items: v.items.map((i) => ({ description: i.description, item_type: i.item_type, quantity: i.quantity, unit_price_paise: i.unit_price, tax_rate: i.tax_rate })),
       }),
     onSuccess: async (invoice) => {

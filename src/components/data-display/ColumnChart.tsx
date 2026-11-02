@@ -55,7 +55,9 @@ export function ColumnChart({ title, data, formatValue = (v) => String(v), forma
             <span key={v}>{formatTick(v)}</span>
           ))}
         </div>
-        <div className="relative min-w-0 flex-1">
+        {/* Each column keeps a ≥24 px touch target; narrow screens scroll inside the chart, never the page. */}
+        <div className="min-w-0 flex-1 overflow-x-auto">
+        <div className="relative" style={{ minWidth: data.length * 26 }}>
           {/* Gridlines: hairline, recessive */}
           <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-col justify-between" style={{ height: height - 20 }} aria-hidden>
             {ticks.map((v) => (
@@ -74,7 +76,7 @@ export function ColumnChart({ title, data, formatValue = (v) => String(v), forma
                     onMouseEnter={() => setActive(i)}
                     onFocus={() => setActive(i)}
                     onBlur={() => setActive(null)}
-                    className="group flex h-full w-full items-end justify-center rounded-sm focus-visible:outline-none"
+                    className="group flex h-full w-full min-w-[24px] items-end justify-center rounded-sm focus-visible:outline-none"
                   >
                     <span
                       className={cn('block w-full max-w-[24px] rounded-t-[4px] transition-colors duration-fast', active === i ? 'bg-forest-deep' : 'bg-forest', 'group-focus-visible:shadow-focus')}
@@ -102,6 +104,7 @@ export function ColumnChart({ title, data, formatValue = (v) => String(v), forma
               </span>
             ))}
           </div>
+        </div>
         </div>
       </div>
       <details className="mt-2 text-xs">

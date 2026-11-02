@@ -16,7 +16,7 @@ import { formatDateTime } from '@/lib/formatters';
 import { qk } from '@/lib/query/keys';
 import { useI18n } from '@/locales/i18n';
 import { signOut } from '@/services/auth';
-import { listNotifications, markNotificationsRead } from '@/services/reports';
+import { listNotifications, markNotificationsRead } from '@/services/notifications';
 
 const COLLAPSE_KEY = 'vaidyora.sidebarCollapsed';
 

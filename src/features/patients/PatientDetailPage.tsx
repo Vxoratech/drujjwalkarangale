@@ -31,7 +31,7 @@ function Detail({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div>
       <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">{label}</dt>
-      <dd className="mt-0.5 text-sm text-ink">{children || <span className="text-ink-subtle">—</span>}</dd>
+      <dd className="mt-0.5 text-sm text-ink">{children || <span className="text-ink-muted">—</span>}</dd>
     </div>
   );
 }

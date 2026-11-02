@@ -10,7 +10,7 @@ A multi-tenant clinic-management SaaS for Ayurvedic clinics and practitioners in
 | Backend | Supabase: Auth, PostgreSQL with Row Level Security, Storage, Edge Functions |
 | Tests | Vitest + Testing Library (unit/components); PGlite (real Postgres in WASM) for migrations, RLS and RPC tests |
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design, [docs/DATABASE.md](docs/DATABASE.md) for every table (generated), [docs/PERMISSIONS.md](docs/PERMISSIONS.md) for the role matrix, and [docs/FEATURES.md](docs/FEATURES.md) for status and acceptance criteria.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design, [docs/DATABASE.md](docs/DATABASE.md) for every table (generated), [docs/PERMISSIONS.md](docs/PERMISSIONS.md) for the role matrix, [docs/API.md](docs/API.md) for service contracts, [docs/SECURITY.md](docs/SECURITY.md) for storage, security, privacy and backup, [docs/FEATURES.md](docs/FEATURES.md) for status and acceptance criteria, [docs/USER_JOURNEYS.md](docs/USER_JOURNEYS.md), [docs/ERD.md](docs/ERD.md), [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md), and [docs/RELEASE.md](docs/RELEASE.md) for remaining gaps and release blockers. Phase-by-phase reports: [docs/PHASE_REPORTS.md](docs/PHASE_REPORTS.md).
 
 ## Quick start (local)
 
@@ -52,7 +52,8 @@ supabase functions serve --env-file supabase/functions/.env
 | `npm run dev` | Vite dev server (also serves the dev-only component gallery at `/__gallery`) |
 | `npm run build` | Typecheck and production build |
 | `npm run lint` | ESLint (strict TS rules, no `any`) |
-| `npm test` | All tests: unit, component, and database/RLS |
+| `npm test` | Unit, component and database/RLS tests |
+| `npm run test:e2e` | Playwright end-to-end tests (see [docs/TESTING.md](docs/TESTING.md)) |
 | `npm run test:db` | Database tests only (migrations + RLS + RPCs in PGlite) |
 | `npm run db:types` | Generate full Supabase types from the local DB |
 | `npm run seed:demo` | Seed the fictional demo clinic (see above) |

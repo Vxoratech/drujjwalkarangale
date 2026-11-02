@@ -83,7 +83,9 @@ export function PrescriptionEditorPage() {
 
   useEffect(() => {
     if (rx) form.reset(toPrescriptionForm(rx));
-    else if (patient.data) {
+    // Apply defaults only to an untouched form, so a late-arriving patient
+    // record can never wipe what the doctor has already typed.
+    else if (patient.data && JSON.stringify(form.getValues()) === JSON.stringify(toPrescriptionForm())) {
       const pref = clinic.settings.prescription_language;
       form.reset(toPrescriptionForm(null, pref === 'en' || pref === 'mr' ? pref : patient.data.preferred_locale));
     }

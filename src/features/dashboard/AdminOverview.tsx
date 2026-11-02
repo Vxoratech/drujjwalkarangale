@@ -11,7 +11,8 @@ import { useClinic } from '@/features/clinic/ClinicProvider';
 import { formatDateTime, formatINR, formatNumber } from '@/lib/formatters';
 import { useI18n, type TranslationKey } from '@/locales/i18n';
 import { fetchProfileNames } from '@/services/clinic';
-import { fetchBranchMetrics, fetchClinicOverview, fetchClinicTrends, listAuditEvents } from '@/services/reports';
+import { fetchBranchMetrics, fetchClinicOverview, fetchClinicTrends } from '@/services/reports';
+import { listAuditEvents } from '@/services/audit';
 import { periodLabels, rangeFor, type RangeKey } from './dashboardRanges';
 
 function RecentActivity() {
@@ -53,7 +54,7 @@ function RecentActivity() {
                       {detail && ` · ${detail}`}
                     </span>
                   </p>
-                  <p className="tabular text-xs text-ink-subtle">{formatDateTime(e.created_at)}</p>
+                  <p className="tabular text-xs text-ink-muted">{formatDateTime(e.created_at)}</p>
                 </div>
               </li>
             );

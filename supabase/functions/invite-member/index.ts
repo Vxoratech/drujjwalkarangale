@@ -2,10 +2,10 @@
 // Trusted server-side operation: needs the service-role key to call the Auth
 // admin API, so it cannot run in the browser. The caller's own JWT is used to
 // verify they hold `users.manage` in the target clinic before anything happens.
-import { createClient } from 'npm:@supabase/supabase-js@2.47.10';
+import { createClient } from 'npm:@supabase/supabase-js@2.118.0';
 import { z } from 'npm:zod@3.24.1';
 import { corsHeaders } from '../_shared/cors.ts';
-import { json } from '../_shared/http.ts';
+import { json, readJsonBody, withinRateLimit } from '../_shared/http.ts';
 
 const InviteSchema = z.object({
   clinicId: z.string().uuid(),
@@ -30,7 +30,7 @@ Deno.serve(async (req) => {
   const authHeader = req.headers.get('Authorization');
   if (!authHeader) return json({ error: 'Unauthorized' }, 401, origin);
 
-  const parsed = InviteSchema.safeParse(await req.json().catch(() => null));
+  const parsed = InviteSchema.safeParse(await readJsonBody(req));
   if (!parsed.success) return json({ error: 'Invalid request', issues: parsed.error.flatten().fieldErrors }, 400, origin);
   const { clinicId, email, fullName, roles, branchIds } = parsed.data;
 
@@ -45,6 +45,11 @@ Deno.serve(async (req) => {
 
   // 2. Privileged work with the service role.
   const admin = createClient(url, serviceKey, { auth: { persistSession: false } });
+
+  // Each invitation sends an email: 20 per inviter per hour.
+  if (!(await withinRateLimit(admin, `invite:${caller.user.id}`, 20, 3600))) {
+    return json({ error: 'Too many invitations. Please try again later.' }, 429, origin);
+  }
 
   let userId: string | undefined;
   const invite = await admin.auth.admin.inviteUserByEmail(email, {

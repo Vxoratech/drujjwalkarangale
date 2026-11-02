@@ -780,6 +780,7 @@ export const mr: Dictionary = {
   subscriptionStatus: { trialing: 'चाचणी', active: 'सक्रिय', past_due: 'पेमेंट थकले', cancelled: 'रद्द', expired: 'कालबाह्य' },
   fieldType: { text: 'मजकूर', number: 'संख्या', select: 'पर्याय', boolean: 'होय / नाही' },
   errors: {
+    rateLimited: 'थोड्या वेळात खूप विनंत्या झाल्या. कृपया काही मिनिटे थांबा.',
     generic: 'काहीतरी चुकले. कृपया पुन्हा प्रयत्न करा.',
     network: 'सर्व्हरशी संपर्क होऊ शकला नाही. इंटरनेट जोडणी तपासा.',
     permission: 'आपल्याला ही क्रिया करण्याची परवानगी नाही.',
@@ -791,6 +792,8 @@ export const mr: Dictionary = {
     notFoundOrDenied: 'नोंद सापडली नाही किंवा आपल्याला तिचा प्रवेश नाही.',
   },
   history: {
+    openProfile: 'संपूर्ण प्रोफाइल उघडा',
+    attachments: 'जोडलेली कागदपत्रे व अहवाल',
     title: 'रुग्णपत्रिका',
     vedanaVishesha: 'वेदना विशेष',
     vedanaHint: 'स्थान, स्वरूप, सुरुवात, कशाने वाढते किंवा कमी होते.',
@@ -819,6 +822,10 @@ export const mr: Dictionary = {
     registrationNo: 'नोंदणी क्र.',
   },
   upload: {
+    progress: 'अपलोड होत आहे… {percent}%',
+    progressLabel: 'अपलोड प्रगती',
+    finishing: 'पूर्ण होत आहे…',
+    failed: 'अपलोड अयशस्वी झाले. काहीही जतन झाले नाही; कृपया पुन्हा प्रयत्न करा.',
     choose: 'फाइल निवडा किंवा येथे ओढा',
     remove: '{name} काढा',
     tooLarge: 'फाइल {mb} MB पेक्षा मोठी आहे.',

@@ -774,6 +774,7 @@ export const en = {
   subscriptionStatus: { trialing: 'Trial', active: 'Active', past_due: 'Payment overdue', cancelled: 'Cancelled', expired: 'Expired' },
   fieldType: { text: 'Text', number: 'Number', select: 'Choice', boolean: 'Yes / No' },
   errors: {
+    rateLimited: 'Too many requests in a short time. Please wait a few minutes.',
     generic: 'Something went wrong. Please try again.',
     network: 'Unable to reach the server. Check your connection.',
     permission: 'You do not have permission to do this.',
@@ -785,6 +786,8 @@ export const en = {
     notFoundOrDenied: 'The record could not be found or you do not have access to it.',
   },
   history: {
+    openProfile: 'Open full profile',
+    attachments: 'Attachments and reports',
     title: 'Patient record (रुग्णपत्रिका)',
     vedanaVishesha: 'Pain characteristics',
     vedanaHint: 'Site, character, onset, what aggravates or relieves it.',
@@ -813,6 +816,10 @@ export const en = {
     registrationNo: 'Reg. No.',
   },
   upload: {
+    progress: 'Uploading… {percent}%',
+    progressLabel: 'Upload progress',
+    finishing: 'Finishing…',
+    failed: 'The upload failed. Nothing was saved; please try again.',
     choose: 'Choose a file or drag it here',
     remove: 'Remove {name}',
     tooLarge: 'File is larger than {mb} MB.',
