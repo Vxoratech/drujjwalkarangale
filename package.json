@@ -2,7 +2,7 @@
   "name": "vaidyora",
   "private": true,
   "version": "0.1.0",
-  "description": "Vaidyora by Vxora Tech — multi-tenant Ayurvedic clinic management SaaS",
+  "description": "Vaidyora by Vxora Tech — Ayurvedic clinic management for Dr. Ujjwal Karangale (one organization, many branches)",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -20,7 +20,8 @@
     "seed:demo": "tsx scripts/seed-demo.ts",
     "docs:db": "tsx scripts/gen-db-docs.ts",
     "test:e2e": "playwright test",
-    "test:unit": "vitest run --project unit"
+    "test:unit": "vitest run --project unit",
+    "bootstrap": "tsx scripts/bootstrap.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

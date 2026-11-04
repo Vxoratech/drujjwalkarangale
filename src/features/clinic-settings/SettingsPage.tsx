@@ -1,29 +1,23 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Building2, Pencil, Plus } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { ErrorState, SkeletonRows } from '@/components/feedback/States';
 import { notify } from '@/components/feedback/toast';
 import { FormField, FormGrid, FormSection } from '@/components/forms/FormField';
-import { Badge } from '@/components/ui/Badge';
-import { Button, IconButton } from '@/components/ui/Button';
+import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
-import { Modal } from '@/components/ui/Dialog';
-import { Checkbox, Input, Select } from '@/components/ui/Input';
+import { Input, Select } from '@/components/ui/Input';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { useClinic } from '@/features/clinic/ClinicProvider';
+import { useAccess } from '@/features/access/AccessProvider';
 import { paiseToRupees, rupeesToPaise } from '@/lib/formatters';
 import { qk } from '@/lib/query/keys';
 import { optionalEmail, optionalPhone, optionalText, requiredText } from '@/lib/validation/schemas';
 import { useFieldError } from '@/lib/validation/useFieldError';
 import { useI18n } from '@/locales/i18n';
-import { fetchBranches, saveBranch, updateClinic } from '@/services/clinic';
-import type { Branch, Clinic } from '@/types/domain';
+import { updateOrganization, updateSettings } from '@/services/organization';
+import type { Organization, OrganizationSettings } from '@/types/domain';
 import { ExamFieldsCard } from './ExamFieldsCard';
 import { PreferencesCard } from './PreferencesCard';
-import { SubscriptionCard } from './SubscriptionCard';
 
 const clinicSchema = z.object({
   name: requiredText(120, 2),
@@ -47,7 +41,7 @@ type ClinicFormValues = z.output<typeof clinicSchema>;
 
 const blankToNull = (v: string | undefined) => (v && v.trim() ? v.trim() : null);
 
-function toForm(c: Clinic): ClinicFormInput {
+function toForm(c: Organization, st: OrganizationSettings): ClinicFormInput {
   return {
     name: c.name,
     legal_name: c.legal_name ?? '',
@@ -59,11 +53,11 @@ function toForm(c: Clinic): ClinicFormInput {
     pincode: c.pincode ?? '',
     gstin: c.gstin ?? '',
     registration_no: c.registration_no ?? '',
-    invoice_prefix: c.invoice_prefix,
-    consultation_fee: String(paiseToRupees(c.consultation_fee_paise)),
-    default_locale: c.default_locale,
-    timezone: c.timezone,
-    audit_retention_days: String(c.audit_retention_days),
+    invoice_prefix: st.invoice_prefix,
+    consultation_fee: String(paiseToRupees(st.consultation_fee_paise)),
+    default_locale: st.default_locale,
+    timezone: st.timezone,
+    audit_retention_days: String(st.audit_retention_days),
   };
 }
 
@@ -73,85 +67,18 @@ function timeZoneOptions(current: string) {
   return [...new Set([current, ...COMMON_ZONES, ...all])].map((z) => ({ value: z, label: z.replace(/_/g, ' ') }));
 }
 
-const branchSchema = z.object({
-  name: requiredText(120, 2),
-  address_line: optionalText(240),
-  city: optionalText(80),
-  phone: optionalPhone,
-  is_active: z.boolean(),
-});
-
-function BranchModal({ branch, open, onOpenChange }: { branch: Branch | null; open: boolean; onOpenChange: (o: boolean) => void }) {
-  const { t } = useI18n();
-  const { clinicId } = useClinic();
-  const queryClient = useQueryClient();
-  const fieldError = useFieldError();
-  const form = useForm<z.infer<typeof branchSchema>>({ resolver: zodResolver(branchSchema) });
-  useEffect(() => {
-    if (open) form.reset({ name: branch?.name ?? '', address_line: branch?.address_line ?? '', city: branch?.city ?? '', phone: branch?.phone ?? '', is_active: branch?.is_active ?? true });
-  }, [open, branch, form]);
-  const mutation = useMutation({
-    mutationFn: (v: z.infer<typeof branchSchema>) =>
-      saveBranch(clinicId, { name: v.name, address_line: blankToNull(v.address_line), city: blankToNull(v.city), phone: blankToNull(v.phone), is_active: v.is_active }, branch?.id),
-    onSuccess: async () => {
-      notify.success(t('settings.branchSaved'));
-      await queryClient.invalidateQueries({ queryKey: qk.branches(clinicId) });
-      onOpenChange(false);
-    },
-    onError: (e) => notify.error(e),
-  });
-  const e = form.formState.errors;
-  return (
-    <Modal
-      open={open}
-      onOpenChange={onOpenChange}
-      title={branch ? branch.name : t('settings.addBranch')}
-      footer={
-        <>
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>
-            {t('common.cancel')}
-          </Button>
-          <Button type="submit" form="branch-form" loading={mutation.isPending}>
-            {t('common.save')}
-          </Button>
-        </>
-      }
-    >
-      <form id="branch-form" noValidate className="space-y-4" onSubmit={form.handleSubmit((v) => mutation.mutate(v))}>
-        <FormField label={t('settings.branchName')} error={fieldError(e.name)} required>
-          <Input {...form.register('name')} />
-        </FormField>
-        <FormField label={t('settings.address')} error={fieldError(e.address_line)}>
-          <Input {...form.register('address_line')} />
-        </FormField>
-        <FormGrid>
-          <FormField label={t('settings.city')} error={fieldError(e.city)}>
-            <Input {...form.register('city')} />
-          </FormField>
-          <FormField label={t('settings.phone')} error={fieldError(e.phone)}>
-            <Input type="tel" {...form.register('phone')} />
-          </FormField>
-        </FormGrid>
-        <Checkbox label={t('settings.active')} disabled={branch?.is_primary} {...form.register('is_active')} />
-      </form>
-    </Modal>
-  );
-}
-
 export function SettingsPage() {
   const { t } = useI18n();
-  const { clinicId, clinic } = useClinic();
+  const { organization, settings } = useAccess();
   const queryClient = useQueryClient();
   const fieldError = useFieldError();
-  const [branchModal, setBranchModal] = useState<{ open: boolean; branch: Branch | null }>({ open: false, branch: null });
-  const branches = useQuery({ queryKey: qk.branches(clinicId), queryFn: () => fetchBranches(clinicId) });
 
-  const form = useForm<ClinicFormInput, unknown, ClinicFormValues>({ resolver: zodResolver(clinicSchema), values: toForm(clinic) });
+  const form = useForm<ClinicFormInput, unknown, ClinicFormValues>({ resolver: zodResolver(clinicSchema), values: toForm(organization, settings) });
   const e = form.formState.errors;
 
   const mutation = useMutation({
-    mutationFn: (v: ClinicFormValues) =>
-      updateClinic(clinicId, {
+    mutationFn: async (v: ClinicFormValues) => {
+      const org = await updateOrganization(organization.id, {
         name: v.name,
         legal_name: blankToNull(v.legal_name),
         phone: blankToNull(v.phone),
@@ -162,15 +89,20 @@ export function SettingsPage() {
         pincode: blankToNull(v.pincode),
         gstin: blankToNull(v.gstin),
         registration_no: blankToNull(v.registration_no),
+      });
+      const st = await updateSettings(organization.id, {
         invoice_prefix: v.invoice_prefix,
         consultation_fee_paise: v.consultation_fee,
         default_locale: v.default_locale,
         timezone: v.timezone,
         audit_retention_days: v.audit_retention_days,
-      }),
-    onSuccess: (saved) => {
+      });
+      return { org, st };
+    },
+    onSuccess: ({ org, st }) => {
       notify.success(t('settings.saved'));
-      queryClient.setQueryData(qk.clinic(clinicId), saved);
+      queryClient.setQueryData(qk.organization(), org);
+      queryClient.setQueryData(qk.settings(), st);
     },
     onError: (err) => notify.error(err),
   });
@@ -234,7 +166,7 @@ export function SettingsPage() {
                       <Select options={[{ value: 'en', label: 'English' }, { value: 'mr', label: 'मराठी' }]} {...form.register('default_locale')} />
                     </FormField>
                     <FormField label={t('settings.timezone')}>
-                      <Select options={timeZoneOptions(clinic.timezone)} {...form.register('timezone')} />
+                      <Select options={timeZoneOptions(settings.timezone)} {...form.register('timezone')} />
                     </FormField>
                     <FormField label={t('settings.auditRetention')} error={fieldError(e.audit_retention_days)}>
                       <Input inputMode="numeric" className="tabular" {...form.register('audit_retention_days')} />
@@ -251,48 +183,12 @@ export function SettingsPage() {
           </CardBody>
         </Card>
         <div className="space-y-6 self-start">
-        <SubscriptionCard />
-        <Card>
-          <CardHeader
-            title={t('settings.branches')}
-            actions={
-              <Button size="sm" variant="secondary" leftIcon={<Plus className="size-4" />} onClick={() => setBranchModal({ open: true, branch: null })}>
-                {t('settings.addBranch')}
-              </Button>
-            }
-          />
-          {branches.isLoading ? (
-            <SkeletonRows rows={2} />
-          ) : branches.isError ? (
-            <ErrorState compact onRetry={() => void branches.refetch()} />
-          ) : (
-            <ul className="divide-y divide-line">
-              {branches.data!.map((b) => (
-                <li key={b.id} className="flex items-center justify-between gap-3 px-5 py-3">
-                  <span className="flex min-w-0 items-center gap-3">
-                    <Building2 className="size-4 shrink-0 text-forest" aria-hidden />
-                    <span className="min-w-0">
-                      <span className="block truncate font-medium">{b.name}</span>
-                      <span className="block truncate text-xs text-ink-muted">{[b.city, b.phone].filter(Boolean).join(' · ') || '—'}</span>
-                    </span>
-                  </span>
-                  <span className="flex items-center gap-2">
-                    {b.is_primary && <Badge tone="gold">{t('settings.primary')}</Badge>}
-                    {!b.is_active && <Badge>{t('settings.inactive')}</Badge>}
-                    <IconButton size="sm" label={`${t('common.edit')} ${b.name}`} icon={<Pencil />} onClick={() => setBranchModal({ open: true, branch: b })} />
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
+          <PreferencesCard />
         </div>
       </div>
       <div className="mt-6 space-y-6">
-        <PreferencesCard />
         <ExamFieldsCard />
       </div>
-      <BranchModal open={branchModal.open} branch={branchModal.branch} onOpenChange={(o) => setBranchModal((s) => ({ ...s, open: o }))} />
     </>
   );
 }

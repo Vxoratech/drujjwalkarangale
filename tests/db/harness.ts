@@ -8,6 +8,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
 import { btree_gist } from '@electric-sql/pglite/contrib/btree_gist';
+import { pg_trgm } from '@electric-sql/pglite/contrib/pg_trgm';
 
 const MIGRATIONS_DIR = join(import.meta.dirname, '../../supabase/migrations');
 
@@ -43,7 +44,7 @@ const SUPABASE_STUBS = `
 `;
 
 export async function createDatabase(): Promise<PGlite> {
-  const db = new PGlite({ extensions: { btree_gist } });
+  const db = new PGlite({ extensions: { btree_gist, pg_trgm } });
   await db.exec(SUPABASE_STUBS);
   const files = readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql')).sort();
   for (const file of files) {
@@ -94,13 +95,4 @@ export async function asServiceRole<T>(db: PGlite, fn: (tx: PGlite) => Promise<T
   } finally {
     await db.exec('reset role');
   }
-}
-
-export async function setPlan(db: PGlite, clinicId: string, code: string): Promise<void> {
-  await asOwner(db, (tx) =>
-    tx.query(
-      `update public.tenant_subscriptions set status = 'active', plan_id = (select id from public.subscription_plans where code = $2) where clinic_id = $1`,
-      [clinicId, code],
-    ),
-  );
 }

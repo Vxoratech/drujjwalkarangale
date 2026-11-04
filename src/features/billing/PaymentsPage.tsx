@@ -13,7 +13,7 @@ import { Modal } from '@/components/ui/Dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/DropdownMenu';
 import { DateInput, Input, Select, Textarea } from '@/components/ui/Input';
 import { PageHeader, Toolbar } from '@/components/ui/PageHeader';
-import { useClinic } from '@/features/clinic/ClinicProvider';
+import { useAccess } from '@/features/access/AccessProvider';
 import { formatDateTime, formatINR, fullName, istDayRange } from '@/lib/formatters';
 import { useI18n } from '@/locales/i18n';
 import { listPayments, reconcilePayment, type PaymentListParams } from '@/services/billing';
@@ -24,7 +24,7 @@ const PAGE_SIZE = 25;
 
 function ReconcileDialog({ payment, onClose }: { payment: PaymentWithContext; onClose: () => void }) {
   const { t } = useI18n();
-  const { clinicId } = useClinic();
+  
   const queryClient = useQueryClient();
   const [ref, setRef] = useState(payment.settlement_reference ?? payment.reference ?? '');
   const [note, setNote] = useState(payment.reconciliation_note ?? '');
@@ -32,8 +32,8 @@ function ReconcileDialog({ payment, onClose }: { payment: PaymentWithContext; on
     mutationFn: () => reconcilePayment({ paymentId: payment.id, reconciled: true, settlementReference: ref.trim() || null, note: note.trim() || null }),
     onSuccess: async () => {
       notify.success(t('billing.reconciled'));
-      await queryClient.invalidateQueries({ queryKey: [clinicId, 'payments'] });
-      await queryClient.invalidateQueries({ queryKey: [clinicId, 'overview'] });
+      await queryClient.invalidateQueries({ queryKey: ['payments'] });
+      await queryClient.invalidateQueries({ queryKey: ['overview'] });
       onClose();
     },
     onError: (e) => notify.error(e),
@@ -70,7 +70,7 @@ function ReconcileDialog({ payment, onClose }: { payment: PaymentWithContext; on
 
 export function PaymentsPage() {
   const { t } = useI18n();
-  const { clinicId, can } = useClinic();
+  const { can } = useAccess();
   const queryClient = useQueryClient();
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -88,10 +88,10 @@ export function PaymentsPage() {
     method: method || undefined,
     reconciled: reconciled === '' ? undefined : reconciled === 'yes',
   };
-  const query = useQuery({ queryKey: [clinicId, 'payments', params], queryFn: () => listPayments(clinicId, params), placeholderData: keepPreviousData });
+  const query = useQuery({ queryKey: ['payments', params], queryFn: () => listPayments(params), placeholderData: keepPreviousData });
   const undo = useMutation({
     mutationFn: (p: PaymentWithContext) => reconcilePayment({ paymentId: p.id, reconciled: false, settlementReference: null, note: null }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: [clinicId, 'payments'] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['payments'] }),
     onError: (e) => notify.error(e),
   });
   const total = (query.data?.rows ?? []).reduce((s, p) => s + p.amount_paise, 0);

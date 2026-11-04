@@ -8,7 +8,6 @@ import { expect, test } from '@playwright/test';
  */
 const PAGES = [
   { name: 'sign-in', path: '/auth/sign-in' },
-  { name: 'sign-up', path: '/auth/sign-up' },
   { name: 'forgot password', path: '/auth/forgot' },
   { name: 'component gallery', path: '/__gallery' },
   { name: 'printed prescription', path: '/__fixtures/prescription?lang=mr&items=4' },

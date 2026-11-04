@@ -5,16 +5,6 @@ export async function signIn(email: string, password: string): Promise<void> {
   if (error) throw error;
 }
 
-export async function signUp(email: string, password: string, fullName: string): Promise<{ needsConfirmation: boolean }> {
-  const { data, error } = await getSupabase().auth.signUp({
-    email,
-    password,
-    options: { data: { full_name: fullName }, emailRedirectTo: `${window.location.origin}/` },
-  });
-  if (error) throw error;
-  return { needsConfirmation: !data.session };
-}
-
 let userInitiatedSignOut = false;
 const EXPIRED_FLAG = 'vaidyora.sessionExpired';
 

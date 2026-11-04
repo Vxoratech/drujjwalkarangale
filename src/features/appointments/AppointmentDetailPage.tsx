@@ -5,11 +5,10 @@ import { PatientIdentity } from '@/components/data-display/Avatar';
 import { StatusBadge } from '@/components/ui/Badge';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { useClinic } from '@/features/clinic/ClinicProvider';
-import { useDoctors } from '@/hooks/useDoctors';
+import { useAccess } from '@/features/access/AccessProvider';
 import { isPermissionError, toUserMessage } from '@/lib/errors';
 import { formatLongDate, formatTime, fullName, maskPhone } from '@/lib/formatters';
-import { CAN_VIEW_PATIENTS } from '@/lib/permissions/permissions';
+import { REQUIRES } from '@/lib/permissions/permissions';
 import { qk } from '@/lib/query/keys';
 import { useI18n } from '@/locales/i18n';
 import { getAppointment } from '@/services/appointments';
@@ -18,9 +17,8 @@ import { AppointmentActions } from './AppointmentActions';
 export function AppointmentDetailPage() {
   const { appointmentId = '' } = useParams();
   const { t } = useI18n();
-  const { clinicId, can } = useClinic();
-  const { names } = useDoctors();
-  const query = useQuery({ queryKey: qk.appointment(clinicId, appointmentId), queryFn: () => getAppointment(clinicId, appointmentId) });
+  const { can, branchName } = useAccess();
+  const query = useQuery({ queryKey: qk.appointment(appointmentId), queryFn: () => getAppointment(appointmentId) });
 
   if (query.isLoading) return <FullPageSpinner />;
   if (query.isError) {
@@ -41,7 +39,7 @@ export function AppointmentDetailPage() {
         <Card className="lg:col-span-2">
           <CardHeader title={t('appointments.patient')} />
           <CardBody className="space-y-4">
-            {can(CAN_VIEW_PATIENTS) && a.patient ? (
+            {can(REQUIRES.viewPatients) && a.patient ? (
               <Link to={`/patients/${a.patient_id}`} className="inline-block rounded hover:underline">
                 <PatientIdentity size="md" name={fullName(a.patient)} code={a.patient.patient_code} meta={maskPhone(a.patient.phone)} />
               </Link>
@@ -50,8 +48,8 @@ export function AppointmentDetailPage() {
             )}
             <dl className="grid gap-4 sm:grid-cols-2">
               <div>
-                <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">{t('appointments.doctor')}</dt>
-                <dd className="mt-0.5 text-sm">{names.get(a.doctor_id) ?? '—'}</dd>
+                <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">{t('appointments.branch')}</dt>
+                <dd className="mt-0.5 text-sm">{branchName(a.branch_id)}</dd>
               </div>
               <div>
                 <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">{t('appointments.type')}</dt>

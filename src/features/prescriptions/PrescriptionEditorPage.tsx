@@ -15,9 +15,7 @@ import { ConfirmDialog, Modal } from '@/components/ui/Dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from '@/components/ui/DropdownMenu';
 import { Checkbox, DateInput, Input, Select, Textarea } from '@/components/ui/Input';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { useCurrentUser } from '@/features/auth/AuthProvider';
-import { useClinic } from '@/features/clinic/ClinicProvider';
-import { useDoctors } from '@/hooks/useDoctors';
+import { useAccess } from '@/features/access/AccessProvider';
 import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { isPermissionError, toUserMessage } from '@/lib/errors';
 import { ageLabel, formatDate, formatDateTime, fullName, todayISO } from '@/lib/formatters';
@@ -34,7 +32,7 @@ import {
   savePrescriptionDraft,
   saveTemplate,
 } from '@/services/clinical';
-import { getPatient } from '@/services/patients';
+import { getMedicalProfile, getPatient } from '@/services/patients';
 import { DOSE_TIMINGS, MEDICINE_FORMS, MEDICINE_ROUTES } from '@/types/domain';
 import {
   emptyItem,
@@ -52,9 +50,7 @@ export function PrescriptionEditorPage() {
   const [search] = useSearchParams();
   const navigate = useNavigate();
   const { t } = useI18n();
-  const user = useCurrentUser();
-  const { clinicId, clinic, can } = useClinic();
-  const { names } = useDoctors();
+  const { can, settings, defaultBranchId, branchName } = useAccess();
   const queryClient = useQueryClient();
   const fieldError = useFieldError();
   const [confirmIssue, setConfirmIssue] = useState(false);
@@ -64,18 +60,18 @@ export function PrescriptionEditorPage() {
   const [reviseReason, setReviseReason] = useState('');
   const [templateOpen, setTemplateOpen] = useState(false);
   const [templateName, setTemplateName] = useState('');
-  const [templateShared, setTemplateShared] = useState(false);
 
-  const rxQuery = useQuery({ queryKey: qk.prescription(clinicId, prescriptionId ?? ''), queryFn: () => getPrescription(clinicId, prescriptionId!), enabled: Boolean(prescriptionId) });
+  const rxQuery = useQuery({ queryKey: qk.prescription(prescriptionId ?? ''), queryFn: () => getPrescription(prescriptionId!), enabled: Boolean(prescriptionId) });
   const rx = rxQuery.data;
   const patientId = prescriptionId ? rx?.patient_id : search.get('patient');
   const consultationId = prescriptionId ? rx?.consultation_id ?? null : search.get('consultation');
-  const patient = useQuery({ queryKey: qk.patient(clinicId, patientId ?? ''), queryFn: () => getPatient(clinicId, patientId!), enabled: Boolean(patientId) });
-  const revisions = useQuery({ queryKey: [clinicId, 'prescription-revisions', prescriptionId], queryFn: () => listPrescriptionRevisions(prescriptionId!), enabled: Boolean(prescriptionId) });
+  const patient = useQuery({ queryKey: qk.patient(patientId ?? ''), queryFn: () => getPatient(patientId!), enabled: Boolean(patientId) });
+  const medical = useQuery({ queryKey: ['medical-profile', patientId], queryFn: () => getMedicalProfile(patientId!), enabled: Boolean(patientId) && can('patients.view_history') });
+  const revisions = useQuery({ queryKey: ['prescription-revisions', prescriptionId], queryFn: () => listPrescriptionRevisions(prescriptionId!), enabled: Boolean(prescriptionId) });
 
-  const isOwner = !rx || rx.doctor_id === user.id;
-  const editable = can('clinical.write') && isOwner && (!rx || rx.status === 'draft');
-  const templates = useQuery({ queryKey: [clinicId, 'rx-templates'], queryFn: () => listTemplates(clinicId), enabled: editable });
+  // Prescriptions are written only by the primary doctor; others may view and reprint.
+  const editable = can('prescriptions.create') && (!rx || rx.status === 'draft');
+  const templates = useQuery({ queryKey: ['rx-templates'], queryFn: () => listTemplates(), enabled: editable });
 
   const form = useForm<PrescriptionFormInput, unknown, PrescriptionFormValues>({ resolver: zodResolver(prescriptionSchema), defaultValues: toPrescriptionForm() });
   const items = useFieldArray({ control: form.control, name: 'items' });
@@ -86,23 +82,25 @@ export function PrescriptionEditorPage() {
     // Apply defaults only to an untouched form, so a late-arriving patient
     // record can never wipe what the doctor has already typed.
     else if (patient.data && JSON.stringify(form.getValues()) === JSON.stringify(toPrescriptionForm())) {
-      const pref = clinic.settings.prescription_language;
+      const pref = settings.preferences.prescription_language;
       form.reset(toPrescriptionForm(null, pref === 'en' || pref === 'mr' ? pref : patient.data.preferred_locale));
     }
-  }, [rx, patient.data, form, clinic.settings.prescription_language]);
+  }, [rx, patient.data, form, settings.preferences.prescription_language]);
 
   useUnsavedChangesGuard(form.formState.isDirty && editable, t('consultations.unsaved'));
 
   const invalidate = () =>
     Promise.all([
-      queryClient.invalidateQueries({ queryKey: [clinicId, 'prescriptions'] }),
-      queryClient.invalidateQueries({ queryKey: [clinicId, 'prescription'] }),
-      queryClient.invalidateQueries({ queryKey: [clinicId, 'prescription-revisions'] }),
+      queryClient.invalidateQueries({ queryKey: ['prescriptions'] }),
+      queryClient.invalidateQueries({ queryKey: ['prescription'] }),
+      queryClient.invalidateQueries({ queryKey: ['prescription-revisions'] }),
     ]);
 
   const save = useMutation({
     mutationFn: async ({ values, issue }: { values: PrescriptionFormValues; issue: boolean }) => {
-      const id = await savePrescriptionDraft(clinicId, { patient_id: patientId!, consultation_id: consultationId, header: toHeaderInput(values) }, toItemInputs(values), prescriptionId);
+      // Linked to a consultation, the server uses that visit's branch.
+      const header = { ...toHeaderInput(values), branch_id: consultationId ? null : defaultBranchId };
+      const id = await savePrescriptionDraft({ patient_id: patientId!, consultation_id: consultationId, header }, toItemInputs(values), prescriptionId);
       if (issue) await issuePrescription(id, reviewed);
       return { id, issue };
     },
@@ -115,7 +113,7 @@ export function PrescriptionEditorPage() {
     onError: (err) => notify.error(err),
   });
 
-  const cancel = useMutation({ mutationFn: () => cancelPrescription(clinicId, prescriptionId!), onSuccess: invalidate, onError: (err) => notify.error(err) });
+  const cancel = useMutation({ mutationFn: () => cancelPrescription(prescriptionId!), onSuccess: invalidate, onError: (err) => notify.error(err) });
   const revise = useMutation({
     mutationFn: () => revisePrescription(prescriptionId!, reviseReason),
     onSuccess: async () => {
@@ -130,13 +128,13 @@ export function PrescriptionEditorPage() {
       const ok = await form.trigger('items');
       if (!ok) throw { message: t('validation.required') };
       const values = prescriptionSchema.parse(form.getValues());
-      await saveTemplate(clinicId, { name: templateName.trim(), items: toItemInputs(values), patient_instructions: values.patient_instructions || null, is_shared: templateShared });
+      await saveTemplate({ name: templateName.trim(), items: toItemInputs(values), patient_instructions: values.patient_instructions || null });
     },
     onSuccess: async () => {
       notify.success(t('prescriptions.templateSaved'));
       setTemplateOpen(false);
       setTemplateName('');
-      await queryClient.invalidateQueries({ queryKey: [clinicId, 'rx-templates'] });
+      await queryClient.invalidateQueries({ queryKey: ['rx-templates'] });
     },
     onError: (err) => notify.error(err),
   });
@@ -184,7 +182,7 @@ export function PrescriptionEditorPage() {
                 <Printer className="size-4" aria-hidden /> {t('common.print')}
               </Link>
             )}
-            {rx?.status === 'issued' && isOwner && can('clinical.write') && (
+            {rx?.status === 'issued' && can('prescriptions.create') && (
               <>
                 <Button variant="secondary" leftIcon={<FilePen className="size-4" />} onClick={() => setReviseOpen(true)}>
                   {t('prescriptions.revise')}
@@ -209,9 +207,9 @@ export function PrescriptionEditorPage() {
       />
 
       <div className="mb-4 space-y-3">
-        {p.allergies && (
+        {medical.data?.allergies && (
           <Alert tone="danger" title={t('patients.allergies')}>
-            {p.allergies}
+            {medical.data.allergies}
           </Alert>
         )}
         {rx?.revision_reason && rx.status === 'draft' && (
@@ -252,7 +250,6 @@ export function PrescriptionEditorPage() {
                               >
                                 <span className="flex flex-col">
                                   <span>{tpl.name}</span>
-                                  {tpl.owner_id !== user.id && <span className="text-xs text-ink-muted">{names.get(tpl.owner_id)}</span>}
                                 </span>
                               </DropdownMenuItem>
                             ))
@@ -368,8 +365,8 @@ export function PrescriptionEditorPage() {
                   </div>
                 )}
                 <div>
-                  <dt className="text-xs text-ink-muted">{t('appointments.doctor')}</dt>
-                  <dd>{names.get(rx?.doctor_id ?? user.id) ?? '—'}</dd>
+                  <dt className="text-xs text-ink-muted">{t('appointments.branch')}</dt>
+                  <dd>{rx ? branchName(rx.branch_id) : branchName(defaultBranchId)}</dd>
                 </div>
                 <div>
                   <dt className="text-xs text-ink-muted">{t('prescriptions.reference')}</dt>
@@ -395,7 +392,7 @@ export function PrescriptionEditorPage() {
                       <div>
                         <p className="font-medium">{t('prescriptions.revisionN', { n: r.revision_number })}</p>
                         <p className="tabular text-xs text-ink-muted">
-                          {formatDateTime(r.issued_at)} · {names.get(r.issued_by) ?? ''}
+                          {formatDateTime(r.issued_at)}
                         </p>
                         {r.revision_reason && <p className="text-xs text-ink-muted">{r.revision_reason}</p>}
                         <p className="text-xs text-ink-muted">{r.snapshot.items.map((i) => i.medicine_name).join(', ')}</p>
@@ -468,7 +465,6 @@ export function PrescriptionEditorPage() {
           <FormField label={t('prescriptions.templateName')} required>
             <Input maxLength={120} value={templateName} onChange={(ev) => setTemplateName(ev.target.value)} />
           </FormField>
-          <Checkbox label={t('prescriptions.shareTemplate')} checked={templateShared} onChange={(ev) => setTemplateShared(ev.target.checked)} />
           <p className="text-xs text-ink-muted">{t('prescriptions.templateDisclaimer')}</p>
         </div>
       </Modal>

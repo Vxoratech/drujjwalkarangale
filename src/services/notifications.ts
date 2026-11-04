@@ -2,10 +2,10 @@ import { getSupabase } from '@/lib/supabase/client';
 import type { AppNotification, UUID } from '@/types/domain';
 import { unwrap } from './_helpers';
 
-/** The signed-in user's notifications in a clinic (RLS: own rows only). Created server-side by triggers. */
-export async function listNotifications(clinicId: UUID): Promise<AppNotification[]> {
+/** The signed-in user's notifications (RLS: own rows only). Created server-side by triggers. */
+export async function listNotifications(): Promise<AppNotification[]> {
   return unwrap<AppNotification[]>(
-    await getSupabase().from('notifications').select('id, clinic_id, kind, title, link, read_at, created_at').eq('clinic_id', clinicId).order('created_at', { ascending: false }).limit(20),
+    await getSupabase().from('notifications').select('id, kind, title, link, read_at, created_at').order('created_at', { ascending: false }).limit(20),
   );
 }
 

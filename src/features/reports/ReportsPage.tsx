@@ -6,11 +6,12 @@ import { Card, CardBody, CardHeader, StatCard } from '@/components/ui/Card';
 import { DateInput } from '@/components/ui/Input';
 import { PageHeader, Toolbar } from '@/components/ui/PageHeader';
 import { SegmentedControl } from '@/components/ui/Tabs';
-import { useClinic } from '@/features/clinic/ClinicProvider';
+import { useAccess } from '@/features/access/AccessProvider';
 import { addDaysISO, formatDate, formatINR, formatNumber, todayISO } from '@/lib/formatters';
 import { qk } from '@/lib/query/keys';
 import { useI18n } from '@/locales/i18n';
-import { fetchAppointmentStatusReport, fetchPaymentMethodReport, fetchRevenueReport } from '@/services/reports';
+import { fetchAppointmentStatusReport, fetchClinicalReport, fetchPaymentMethodReport, fetchRevenueReport } from '@/services/reports';
+import { BranchFilter } from '@/components/ui/BranchFilter';
 import { BranchComparison, TrendCharts } from '@/features/dashboard/AdminOverview';
 
 type Preset = 'last7' | 'last30' | 'thisMonth';
@@ -39,13 +40,19 @@ function Bar({ value, max, tone = 'forest' }: { value: number; max: number; tone
 
 export function ReportsPage() {
   const { t } = useI18n();
-  const { clinicId } = useClinic();
+  const { can, branchFilter: branch } = useAccess();
   const [preset, setPreset] = useState<Preset | 'custom'>('last30');
   const [range, setRange] = useState(presetRange('last30'));
+  // Each section appears only with its report permission (the server checks the same).
+  const financial = can('reports.financial');
+  const operational = can('reports.operational');
+  const clinical = can('reports.clinical');
+  const key = { ...range, branch };
 
-  const revenue = useQuery({ queryKey: qk.reports(clinicId, { kind: 'revenue', ...range }), queryFn: () => fetchRevenueReport(clinicId, range.from, range.to) });
-  const methods = useQuery({ queryKey: qk.reports(clinicId, { kind: 'methods', ...range }), queryFn: () => fetchPaymentMethodReport(clinicId, range.from, range.to) });
-  const statuses = useQuery({ queryKey: qk.reports(clinicId, { kind: 'statuses', ...range }), queryFn: () => fetchAppointmentStatusReport(clinicId, range.from, range.to) });
+  const revenue = useQuery({ queryKey: qk.reports({ kind: 'revenue', ...key }), queryFn: () => fetchRevenueReport(branch, range.from, range.to), enabled: financial });
+  const methods = useQuery({ queryKey: qk.reports({ kind: 'methods', ...key }), queryFn: () => fetchPaymentMethodReport(branch, range.from, range.to), enabled: financial });
+  const statuses = useQuery({ queryKey: qk.reports({ kind: 'statuses', ...key }), queryFn: () => fetchAppointmentStatusReport(branch, range.from, range.to), enabled: operational });
+  const clinicalReport = useQuery({ queryKey: qk.reports({ kind: 'clinical', ...key }), queryFn: () => fetchClinicalReport(branch, range.from, range.to), enabled: clinical });
 
   const rows = revenue.data ?? [];
   const totalInvoiced = rows.reduce((s, r) => s + r.invoiced_paise, 0);
@@ -75,6 +82,7 @@ export function ReportsPage() {
             ]}
           />
           <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+            <BranchFilter />
             <DateInput aria-label={t('reports.from')} value={range.from} max={range.to} onChange={(e) => { setPreset('custom'); setRange((r) => ({ ...r, from: e.target.value || r.from })); }} className="w-auto" />
             <span className="text-ink-muted">–</span>
             <DateInput aria-label={t('reports.to')} value={range.to} min={range.from} max={todayISO()} onChange={(e) => { setPreset('custom'); setRange((r) => ({ ...r, to: e.target.value || r.to })); }} className="w-auto" />
@@ -82,18 +90,65 @@ export function ReportsPage() {
         </Toolbar>
       </Card>
 
-      <section aria-label="Totals" className="mb-6 grid gap-4 sm:grid-cols-3">
-        <StatCard label={t('reports.invoiced')} value={formatINR(totalInvoiced, { whole: true })} loading={revenue.isLoading} />
-        <StatCard label={t('reports.collected')} value={formatINR(totalCollected, { whole: true })} accent="gold" loading={revenue.isLoading} />
-        <StatCard label={t('reports.invoices')} value={formatNumber(invoiceCount)} accent="info" loading={revenue.isLoading} />
-      </section>
+      {clinical && (
+        <Card className="mb-6">
+          <CardHeader title={t('reports.clinicalActivity')} description={t('reports.clinicalHint')} />
+          {clinicalReport.isLoading ? (
+            <SkeletonRows rows={2} />
+          ) : clinicalReport.isError ? (
+            <ErrorState compact onRetry={() => void clinicalReport.refetch()} />
+          ) : (
+            <CardBody>
+              <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                {(
+                  [
+                    ['dashboard.consultationsCompleted', clinicalReport.data!.consultations_finalized],
+                    ['dashboard.newPatientsSeen', clinicalReport.data!.new_patients_seen],
+                    ['dashboard.prescriptionsIssued', clinicalReport.data!.prescriptions_issued],
+                    ['reports.prescriptionsRevised', clinicalReport.data!.prescriptions_revised],
+                    ['reports.investigationsOrdered', clinicalReport.data!.investigations_ordered],
+                    ['dashboard.investigationsResulted', clinicalReport.data!.investigations_resulted],
+                    ['reports.followUpsCreated', clinicalReport.data!.follow_ups_created],
+                  ] as const
+                ).map(([label, value]) => (
+                  <div key={label}>
+                    <dt className="text-xs text-ink-muted">{t(label)}</dt>
+                    <dd className="tabular text-lg font-semibold">{formatNumber(value)}</dd>
+                  </div>
+                ))}
+              </dl>
+              {clinicalReport.data!.by_branch.length > 1 && (
+                <ul className="mt-5 space-y-2 border-t border-line pt-4 text-sm">
+                  {clinicalReport.data!.by_branch.map((b) => (
+                    <li key={b.branch_id} className="flex justify-between">
+                      <span>{b.branch_name}</span>
+                      <span className="tabular font-medium">{t('reports.consultationsCount', { count: b.consultations })}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardBody>
+          )}
+        </Card>
+      )}
 
-      <div className="mb-6 space-y-6">
-        <TrendCharts from={range.from} to={range.to} bucket={bucketFor(range.from, range.to)} />
-        <BranchComparison from={range.from} to={range.to} />
-      </div>
+      {financial && (
+        <section aria-label={t('reports.totals')} className="mb-6 grid gap-4 sm:grid-cols-3">
+          <StatCard label={t('reports.invoiced')} value={formatINR(totalInvoiced, { whole: true })} loading={revenue.isLoading} />
+          <StatCard label={t('reports.collected')} value={formatINR(totalCollected, { whole: true })} accent="gold" loading={revenue.isLoading} />
+          <StatCard label={t('reports.invoices')} value={formatNumber(invoiceCount)} accent="info" loading={revenue.isLoading} />
+        </section>
+      )}
+
+      {(operational || financial) && (
+        <div className="mb-6 space-y-6">
+          <TrendCharts from={range.from} to={range.to} bucket={bucketFor(range.from, range.to)} />
+          {!branch && <BranchComparison from={range.from} to={range.to} />}
+        </div>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-3">
+        {financial && (
         <Card className="lg:col-span-2">
           <CardHeader title={t('reports.daily')} description={`${formatDate(range.from)} – ${formatDate(range.to)}`} />
           {revenue.isLoading ? (
@@ -134,7 +189,9 @@ export function ReportsPage() {
             </div>
           )}
         </Card>
+        )}
         <div className="space-y-6">
+          {financial && (
           <Card>
             <CardHeader title={t('reports.byMethod')} />
             <CardBody>
@@ -157,6 +214,8 @@ export function ReportsPage() {
               )}
             </CardBody>
           </Card>
+          )}
+          {operational && (
           <Card>
             <CardHeader title={t('reports.byStatus')} />
             <CardBody>
@@ -179,6 +238,7 @@ export function ReportsPage() {
               )}
             </CardBody>
           </Card>
+          )}
         </div>
       </div>
     </>

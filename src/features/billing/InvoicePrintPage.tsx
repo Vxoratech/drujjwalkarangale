@@ -4,18 +4,20 @@ import { useParams } from 'react-router-dom';
 import { ErrorState, FullPageSpinner } from '@/components/feedback/States';
 import { PrintableDocument } from '@/components/data-display/PrintableDocument';
 import { Button } from '@/components/ui/Button';
-import { useClinic } from '@/features/clinic/ClinicProvider';
+import { useAccess } from '@/features/access/AccessProvider';
 import { toUserMessage } from '@/lib/errors';
 import { formatDate, formatINR, fullName } from '@/lib/formatters';
 import { qk } from '@/lib/query/keys';
 import { useI18n } from '@/locales/i18n';
 import { getInvoice } from '@/services/billing';
+import { useBranches } from '@/hooks/useBranches';
 
 export function InvoicePrintPage() {
   const { invoiceId = '' } = useParams();
   const { t } = useI18n();
-  const { clinicId, clinic } = useClinic();
-  const query = useQuery({ queryKey: qk.invoice(clinicId, invoiceId), queryFn: () => getInvoice(clinicId, invoiceId) });
+  const { organization } = useAccess();
+  const { byId } = useBranches();
+  const query = useQuery({ queryKey: qk.invoice(invoiceId), queryFn: () => getInvoice(invoiceId) });
 
   if (query.isLoading) return <FullPageSpinner />;
   if (query.isError || !query.data) return <ErrorState message={toUserMessage(query.error)} />;
@@ -29,7 +31,8 @@ export function InvoicePrintPage() {
         </Button>
       </div>
       <PrintableDocument
-        clinic={clinic}
+        organization={organization}
+        branch={byId.get(inv.branch_id)}
         title={inv.status === 'void' ? `${t('billing.invoice')} — ${t('invoiceStatus.void')}` : t('billing.invoice')}
         meta={
           <span className="tabular">

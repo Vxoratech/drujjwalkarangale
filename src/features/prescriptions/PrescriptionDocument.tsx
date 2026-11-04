@@ -3,10 +3,12 @@ import { ageLabel, formatDate, fullName } from '@/lib/formatters';
 import { en } from '@/locales/en';
 import { translate, type TranslationKey } from '@/locales/i18n';
 import { mr } from '@/locales/mr';
-import type { Clinic, Consultation, Patient, Prescription, PrescriptionItem, Profile } from '@/types/domain';
+import type { Branch, Consultation, Organization, Patient, Prescription, PrescriptionItem, Profile } from '@/types/domain';
 
 export interface PrescriptionDocumentProps {
-  clinic: Clinic;
+  organization: Organization;
+  /** Branch where the prescription was written (address on the letterhead). */
+  branch?: Branch | null;
   rx: Prescription;
   patient: Patient;
   doctor: Pick<Profile, 'full_name' | 'qualification' | 'medical_registration_no'> | null | undefined;
@@ -17,7 +19,7 @@ export interface PrescriptionDocumentProps {
  * The A4 prescription, rendered in the prescription's own language
  * (independent of the UI language). Pure: all data comes from props.
  */
-export function PrescriptionDocument({ clinic, rx, patient: p, doctor, consultation: c }: PrescriptionDocumentProps) {
+export function PrescriptionDocument({ organization, branch, rx, patient: p, doctor, consultation: c }: PrescriptionDocumentProps) {
   const age = ageLabel(p);
   const dict = rx.language === 'mr' ? mr : en;
   const printT = (key: TranslationKey, params?: Record<string, string | number>) => translate(dict, key, params);
@@ -27,7 +29,8 @@ export function PrescriptionDocument({ clinic, rx, patient: p, doctor, consultat
   return (
         <PrintableDocument
           language={rx.language}
-          clinic={clinic}
+          organization={organization}
+          branch={branch}
           title={printT('prescriptions.title')}
           meta={
             <span className="tabular">

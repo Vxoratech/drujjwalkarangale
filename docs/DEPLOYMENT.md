@@ -14,7 +14,7 @@ supabase start                  # local Postgres, Auth, Storage, Studio
 cp .env.example .env.local      # paste the API URL and anon key printed by `supabase start`
 npm run dev                     # http://localhost:5173
 ```
-Optional fictional demo clinic:
+Optional fictional demo data:
 ```bash
 SUPABASE_URL=http://127.0.0.1:54321 SUPABASE_ANON_KEY=<anon> SUPABASE_SERVICE_ROLE_KEY=<service-role> DEMO_PASSWORD='<choose>' npm run seed:demo
 ```
@@ -25,16 +25,18 @@ SUPABASE_URL=http://127.0.0.1:54321 SUPABASE_ANON_KEY=<anon> SUPABASE_SERVICE_RO
 | --- | --- | --- | --- |
 | 1 | Create the project in the intended **region** | Dashboard. Consider an Indian region (`ap-south-1`, Mumbai) for health data; see [SECURITY.md §13](SECURITY.md#13-regulatory-position-not-a-compliance-claim) | Created in `ap-southeast-2` (Sydney); review |
 | 2 | Link the repo | `supabase link --project-ref <ref>` | ✅ linked |
-| 3 | Apply migrations | `supabase db push --dry-run`, review the list, then `supabase db push` | ✅ 0001–0014 applied · ⏳ **0015 pending** |
-| 4 | Check the schema | `supabase db lint --linked` | ✅ no errors (through 0014) |
-| 5 | Auth URLs | Authentication → URL configuration: **Site URL** = app origin; add the same origin to redirect URLs (password reset and invites land on `/auth/set-password`) | ⏳ to do |
-| 6 | Auth policy | Minimum password length 10, mixed case and digits; refresh-token rotation on; rate limits as in `supabase/config.toml` (`config.toml` affects local stacks only) | ⏳ to do |
-| 7 | Email (SMTP) | Configure a real SMTP sender for invites and resets; the built-in sender is heavily rate-limited | ⏳ to do |
-| 8 | Edge Function secrets | `supabase secrets set SITE_URL=https://app.example.in ALLOWED_ORIGINS=https://app.example.in` (`SUPABASE_URL`, `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` are injected automatically) | ⏳ to do |
-| 9 | Deploy Edge Functions | `supabase functions deploy invite-member` and `supabase functions deploy document-url` | ⏳ **not deployed**: staff invites and opening documents won't work until this is done |
-| 10 | Scheduled jobs | Enable `pg_cron` and schedule (as the service role): `select public.purge_expired_audit_events();` daily; `select public.purge_abandoned_uploads();` hourly, plus a small job that deletes the returned storage paths through the Storage API | ⏳ to do |
-| 11 | Backups | Enable **Point-in-Time Recovery** (production), plus a scheduled copy of the `clinic-files` bucket | ⏳ to do |
-| 12 | Platform operator | `insert into public.platform_admins (user_id, role) values ('<auth user id>', 'owner');` in the SQL editor | optional |
+| 3 | Apply migrations | `supabase db push --dry-run`, review, then `supabase db push`. (03/11/2026: the database was reset to the single-organization baseline with `supabase db reset --linked`; never do that once real data exists.) | ✅ 0100–0500 applied |
+| 4 | Check the schema | `supabase db lint --linked` | ✅ no issues |
+| 5 | **Turn off public sign-up** | Authentication → Sign In / Providers → disable **Allow new users to sign up**. Invitations still work. | ⏳ to do (sign-ups currently create accounts with no access) |
+| 6 | Auth URLs | Authentication → URL configuration: **Site URL** = app origin; add the same origin to redirect URLs (invites and resets land on `/auth/set-password`) | ⏳ to do |
+| 7 | Auth policy | Minimum password length 10, mixed case and digits; refresh-token rotation on; rate limits as in `supabase/config.toml` (`config.toml` affects local stacks only) | ⏳ to do |
+| 8 | Email (SMTP) | Configure a real SMTP sender for invites and resets; the built-in sender is heavily rate-limited | ⏳ to do |
+| 9 | Edge Function secrets | `supabase secrets set SITE_URL=https://app.example.in ALLOWED_ORIGINS=https://app.example.in` (`SUPABASE_URL`, `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` are injected automatically) | ⏳ to do |
+| 10 | Deploy Edge Functions | `supabase functions deploy staff-admin` and `supabase functions deploy document-url` | ⏳ **not deployed**: staff invitations and opening documents need them |
+| 11 | **Bind the primary doctor** | `npm run bootstrap` with `DOCTOR_EMAIL` (and optionally `ADMIN_EMAIL`), or in the SQL editor after creating the auth user: `select public.bootstrap_primary_doctor('<email>');`. Runs once; the binding is permanent. | ⏳ to do |
+| 12 | Branches and staff | In the app: Branch Management (rename **Main Clinic**, add branches, working hours), then Staff Management | ⏳ after 11 |
+| 13 | Scheduled jobs | Enable `pg_cron` and schedule (as the service role): `select public.purge_expired_audit_events();` daily; `select public.purge_abandoned_uploads();` hourly, plus a small job that deletes the returned storage paths through the Storage API | ⏳ to do |
+| 14 | Backups | Enable **Point-in-Time Recovery** (production), plus a scheduled copy of the `clinic-files` bucket | ⏳ to do |
 
 ## 4. Frontend build and hosting
 ```bash
@@ -68,7 +70,7 @@ The dev-only routes `/__gallery` and `/__fixtures/*` are not included in product
 2. `supabase db push --dry-run` against **staging**, review, push; run `npm run test:e2e` with the staging `E2E_*` values.
 3. Take a backup (or note the PITR timestamp) of **production**.
 4. `supabase db push` to production; deploy any changed Edge Functions; deploy the frontend.
-5. Smoke test: sign in, open a patient, book and cancel a test appointment in a demo clinic, print a prescription.
+5. Smoke test: sign in as the doctor and as a test staff account, open a patient, book and cancel a test appointment, print a prescription, and confirm the staff account cannot open consultations.
 6. Rollback: frontend → redeploy the previous build; database → forward-fix migration (preferred) or PITR restore for data damage.
 
 ## 6. Monitoring

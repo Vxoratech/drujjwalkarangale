@@ -8,34 +8,36 @@ import { Badge } from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
 import { Select } from '@/components/ui/Input';
 import { PageHeader, Toolbar } from '@/components/ui/PageHeader';
-import { useClinic } from '@/features/clinic/ClinicProvider';
+import { useAccess } from '@/features/access/AccessProvider';
 import { formatDateTime } from '@/lib/formatters';
 import { qk } from '@/lib/query/keys';
 import { useI18n, type TranslationKey } from '@/locales/i18n';
-import { fetchProfileNames } from '@/services/clinic';
+import { fetchProfileNames } from '@/services/organization';
+import { BranchFilter } from '@/components/ui/BranchFilter';
 import { listAuditEvents } from '@/services/audit';
 import type { AuditAction, AuditEvent } from '@/types/domain';
 
 const PAGE_SIZE = 25;
 const ENTITY_TYPES = [
-  'patients', 'patient_consents', 'patient_documents', 'appointments', 'follow_ups', 'consultations', 'ayurvedic_examinations',
-  'prescriptions', 'prescription_revisions', 'investigations', 'invoices', 'payments', 'refunds', 'clinic_members',
-  'member_branches', 'clinics', 'branches', 'tenant_subscriptions', 'session',
+  'patients', 'patient_medical_profiles', 'patient_consents', 'patient_documents', 'appointments', 'follow_ups', 'consultations',
+  'ayurvedic_examinations', 'prescriptions', 'prescription_revisions', 'investigations', 'invoices', 'payments', 'refunds',
+  'staff_members', 'staff_branch_assignments', 'staff_permission_overrides', 'roles', 'role_permissions', 'user_profiles',
+  'organization', 'clinic_settings', 'clinic_branches', 'session',
 ];
-const ACTIONS: AuditAction[] = ['insert', 'update', 'delete', 'view', 'access', 'security'];
+const ACTIONS: AuditAction[] = ['insert', 'update', 'delete', 'view', 'access', 'security', 'permission'];
 
 export function AuditLogPage() {
   const { t } = useI18n();
-  const { clinicId } = useClinic();
+  const { branchFilter, branchName } = useAccess();
   const [page, setPage] = useState(1);
   const [entityType, setEntityType] = useState('');
   const [action, setAction] = useState('');
-  const params = { page, pageSize: PAGE_SIZE, entityType: entityType || undefined, action: action || undefined };
-  const query = useQuery({ queryKey: qk.audit(clinicId, params), queryFn: () => listAuditEvents(clinicId, params), placeholderData: keepPreviousData });
+  const params = { page, pageSize: PAGE_SIZE, entityType: entityType || undefined, action: action || undefined, branchId: branchFilter };
+  const query = useQuery({ queryKey: qk.audit(params), queryFn: () => listAuditEvents(params), placeholderData: keepPreviousData });
   const actorIds = [...new Set((query.data?.rows ?? []).map((r) => r.actor_id).filter((id): id is string => Boolean(id)))];
   const actors = useQuery({ queryKey: ['profile-names', actorIds], queryFn: () => fetchProfileNames(actorIds), enabled: actorIds.length > 0 });
 
-  const actorName = (e: AuditEvent) => (e.actor_type === 'platform' ? t('audit.actorPlatform') : e.actor_id ? actors.data?.get(e.actor_id) ?? '—' : t('audit.system'));
+  const actorName = (e: AuditEvent) => (e.actor_id ? actors.data?.get(e.actor_id) ?? '—' : t('audit.system'));
   const actionLabel = (a: AuditAction) => t(`audit.${a}` as TranslationKey);
   const detail = (e: AuditEvent) => [describeMetadata(e.metadata), e.changed_fields.map(humanizeField).join(', ')].filter(Boolean).join(' · ') || '—';
 
@@ -55,6 +57,7 @@ export function AuditLogPage() {
       },
     },
     { key: 'entity', header: t('audit.entity'), cell: (e) => humanizeEntity(e.entity_type) },
+    { key: 'branch', header: t('appointments.branch'), hideBelow: 'lg', cell: (e) => <span className="text-ink-muted">{e.branch_id ? branchName(e.branch_id) : '—'}</span> },
     { key: 'fields', header: t('audit.fields'), hideBelow: 'md', cell: (e) => <span className="text-xs text-ink-muted">{detail(e)}</span> },
   ];
 
@@ -87,6 +90,7 @@ export function AuditLogPage() {
               options={ACTIONS.map((a) => ({ value: a, label: actionLabel(a) }))}
             />
           </div>
+          <BranchFilter className="sm:ml-auto" />
         </Toolbar>
         {query.isLoading ? (
           <SkeletonRows rows={10} />

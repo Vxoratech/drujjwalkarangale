@@ -8,9 +8,9 @@ import { StatusBadge } from '@/components/ui/Badge';
 import { Button, IconButton } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { DateInput, Select } from '@/components/ui/Input';
+import { BranchFilter } from '@/components/ui/BranchFilter';
 import { PageHeader, Toolbar } from '@/components/ui/PageHeader';
-import { useClinic } from '@/features/clinic/ClinicProvider';
-import { useDoctors } from '@/hooks/useDoctors';
+import { useAccess } from '@/features/access/AccessProvider';
 import { addDaysISO, formatLongDate, formatTime, fullName, istDayRange, startOfWeekISO, todayISO } from '@/lib/formatters';
 import { SegmentedControl } from '@/components/ui/Tabs';
 import { WeekView } from './WeekView';
@@ -23,15 +23,14 @@ import { AppointmentFormModal } from './AppointmentFormModal';
 
 export function AppointmentsPage() {
   const { t } = useI18n();
-  const { clinicId, can } = useClinic();
-  const { doctors, names } = useDoctors();
+  const { can, branchFilter, branches, branchName } = useAccess();
   const [params, setParams] = useSearchParams();
   const date = params.get('date') ?? todayISO();
-  const doctorId = params.get('doctor') ?? '';
   const status = (params.get('status') ?? '') as AppointmentStatus | '';
   const [bookOpen, setBookOpen] = useState(params.get('book') === '1');
   const view = (params.get('view') === 'week' ? 'week' : 'day') as 'day' | 'week';
-  const showAllDoctors = can('appointments.read_all');
+  // With several branches in view, each row says where the visit is.
+  const showBranch = branches.length > 1 && !branchFilter;
 
   function update(key: string, value: string) {
     const next = new URLSearchParams(params);
@@ -44,9 +43,9 @@ export function AppointmentsPage() {
 
   const weekStart = startOfWeekISO(date);
   const range = view === 'week' ? { from: istDayRange(weekStart).from, to: istDayRange(addDaysISO(weekStart, 6)).to } : istDayRange(date);
-  const listParams = { from: range.from, to: range.to, doctorId: doctorId || undefined, statuses: status ? [status] : undefined };
+  const listParams = { from: range.from, to: range.to, branchId: branchFilter, statuses: status ? [status] : undefined };
   const step = view === 'week' ? 7 : 1;
-  const query = useQuery({ queryKey: qk.appointments(clinicId, listParams), queryFn: () => listAppointments(clinicId, listParams) });
+  const query = useQuery({ queryKey: qk.appointments(listParams), queryFn: () => listAppointments(listParams) });
 
   return (
     <>
@@ -54,7 +53,7 @@ export function AppointmentsPage() {
         title={t('appointments.title')}
         description={t('appointments.subtitle')}
         actions={
-          can('appointments.manage') && (
+          can('appointments.create') && (
             <Button leftIcon={<Plus className="size-4" />} onClick={() => setBookOpen(true)}>
               {t('appointments.book')}
             </Button>
@@ -84,17 +83,7 @@ export function AppointmentsPage() {
             )}
           </div>
           <div className="flex flex-1 flex-wrap gap-3 sm:justify-end">
-            {showAllDoctors && (
-              <div className="min-w-[11rem]">
-                <Select
-                  aria-label={t('appointments.doctor')}
-                  value={doctorId}
-                  onChange={(e) => update('doctor', e.target.value)}
-                  placeholder={t('appointments.allDoctors')}
-                  options={doctors.map((d) => ({ value: d.user_id, label: d.full_name }))}
-                />
-              </div>
-            )}
+            <BranchFilter className="sm:hidden" />
             <div className="min-w-[10rem]">
               <Select
                 aria-label={t('appointments.status')}
@@ -112,7 +101,7 @@ export function AppointmentsPage() {
           ) : query.isError ? (
             <ErrorState onRetry={() => void query.refetch()} />
           ) : (
-            <WeekView weekStart={weekStart} appointments={query.data!} doctorNames={showAllDoctors ? names : undefined} onPickDay={(d) => { update('date', d); update('view', ''); }} />
+            <WeekView weekStart={weekStart} appointments={query.data!} branchName={showBranch ? branchName : undefined} onPickDay={(d) => { update('date', d); update('view', ''); }} />
           )
         ) : (
         <>
@@ -125,7 +114,7 @@ export function AppointmentsPage() {
           <EmptyState
             icon={<CalendarDays />}
             title={t('appointments.emptyDay')}
-            action={can('appointments.manage') && <Button onClick={() => setBookOpen(true)}>{t('appointments.book')}</Button>}
+            action={can('appointments.create') && <Button onClick={() => setBookOpen(true)}>{t('appointments.book')}</Button>}
           />
         ) : (
           <ul className="divide-y divide-line">
@@ -136,7 +125,7 @@ export function AppointmentsPage() {
                   <span className="block text-xs text-ink-muted">{formatTime(a.ends_at)}</span>
                 </div>
                 <Link to={`/appointments/${a.id}`} className="min-w-0 flex-1 rounded hover:underline">
-                  <PatientIdentity name={fullName(a.patient)} code={a.patient?.patient_code} meta={[t(`appointmentType.${a.type}`), showAllDoctors ? names.get(a.doctor_id) : null, a.reason].filter(Boolean).join(' · ')} />
+                  <PatientIdentity name={fullName(a.patient)} code={a.patient?.patient_code} meta={[t(`appointmentType.${a.type}`), showBranch ? branchName(a.branch_id) : null, a.reason].filter(Boolean).join(' · ')} />
                 </Link>
                 <StatusBadge status={a.status} label={t(`appointmentStatus.${a.status}`)} />
                 <AppointmentActions appointment={a} />
@@ -155,7 +144,6 @@ export function AppointmentsPage() {
         }}
         defaultDate={date}
         defaultPatientId={params.get('patient')}
-        defaultDoctorId={doctorId || null}
       />
     </>
   );

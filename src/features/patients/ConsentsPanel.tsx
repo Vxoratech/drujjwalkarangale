@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/Button';
 import { ConfirmDialog, Modal } from '@/components/ui/Dialog';
 import { Select, Textarea } from '@/components/ui/Input';
 import { useCurrentUser } from '@/features/auth/AuthProvider';
-import { useClinic } from '@/features/clinic/ClinicProvider';
+import { useAccess } from '@/features/access/AccessProvider';
 import { formatDateTime } from '@/lib/formatters';
 import { useI18n } from '@/locales/i18n';
 import { CONSENT_POLICY_VERSION, grantConsent, listConsents, withdrawConsent } from '@/services/consents';
@@ -18,7 +18,7 @@ import { CONSENT_METHODS, CONSENT_TYPES, type ConsentMethod, type ConsentType, t
 export function ConsentsPanel({ patientId }: { patientId: UUID }) {
   const { t } = useI18n();
   const user = useCurrentUser();
-  const { clinicId, can } = useClinic();
+  const { can } = useAccess();
   const queryClient = useQueryClient();
   const canManage = can('consents.manage');
   const [open, setOpen] = useState(false);
@@ -26,12 +26,12 @@ export function ConsentsPanel({ patientId }: { patientId: UUID }) {
   const [method, setMethod] = useState<ConsentMethod>('written');
   const [notes, setNotes] = useState('');
   const [withdrawing, setWithdrawing] = useState<PatientConsent | null>(null);
-  const query = useQuery({ queryKey: [clinicId, 'consents', patientId], queryFn: () => listConsents(clinicId, patientId) });
+  const query = useQuery({ queryKey: ['consents', patientId], queryFn: () => listConsents(patientId) });
   const active = new Set((query.data ?? []).filter((c) => c.status === 'granted').map((c) => c.consent_type));
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: [clinicId, 'consents', patientId] });
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['consents', patientId] });
 
   const grant = useMutation({
-    mutationFn: () => grantConsent(clinicId, { patientId, type, method, notes: notes.trim() || null, recordedBy: user.id }),
+    mutationFn: () => grantConsent({ patientId, type, method, notes: notes.trim() || null, recordedBy: user.id }),
     onSuccess: async () => {
       notify.success(t('patients.consentRecorded'));
       setOpen(false);

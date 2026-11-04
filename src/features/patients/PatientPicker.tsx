@@ -4,7 +4,6 @@ import { useId, useState, type KeyboardEvent } from 'react';
 import { PatientIdentity } from '@/components/data-display/Avatar';
 import { controlClasses } from '@/components/ui/Input';
 import { useFieldControl } from '@/components/forms/FormField';
-import { useClinic } from '@/features/clinic/ClinicProvider';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { cn } from '@/lib/cn';
 import { fullName, maskPhone } from '@/lib/formatters';
@@ -22,7 +21,7 @@ export interface PatientPickerProps {
 /** Accessible combobox (WAI-ARIA 1.2 pattern) for selecting a patient by name, phone or ID. */
 export function PatientPicker({ value, onChange, disabled }: PatientPickerProps) {
   const { t } = useI18n();
-  const { clinicId } = useClinic();
+  
   const field = useFieldControl();
   const listId = useId();
   const [term, setTerm] = useState('');
@@ -30,10 +29,10 @@ export function PatientPicker({ value, onChange, disabled }: PatientPickerProps)
   const [active, setActive] = useState(0);
   const debounced = useDebouncedValue(term, 250);
 
-  const selected = useQuery({ queryKey: qk.patient(clinicId, value ?? ''), queryFn: () => getPatient(clinicId, value!), enabled: Boolean(value) });
+  const selected = useQuery({ queryKey: qk.patient(value ?? ''), queryFn: () => getPatient(value!), enabled: Boolean(value) });
   const results = useQuery({
-    queryKey: qk.patients(clinicId, { picker: debounced }),
-    queryFn: () => searchPatients(clinicId, debounced),
+    queryKey: qk.patients({ picker: debounced }),
+    queryFn: () => searchPatients(debounced),
     enabled: open && debounced.trim().length >= 2,
   });
   const options: PatientListItem[] = results.data ?? [];

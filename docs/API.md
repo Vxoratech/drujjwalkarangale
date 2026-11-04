@@ -14,18 +14,19 @@ Page / component
 ```
 
 - **Components never import `supabase-js`.** Only `src/services/*` and `src/lib/supabase/client.ts` do.
-- **Query keys start with the clinic id** (`src/lib/query/keys.ts`). Switching clinic drops the previous clinic's cache; signing out clears everything.
-- **Mutations invalidate by prefix**, for example `[clinicId, 'appointments']` after any booking change, so lists and details stay consistent.
+- **Query keys** come from `src/lib/query/keys.ts`. Signing out (or a different user signing in) clears the whole cache.
+- **Mutations invalidate by prefix**, for example `['appointments']` after any booking change, so lists and details stay consistent.
+- **Branch filter:** lists and dashboards take the optional branch chosen in the header (`branchFilter`); `null` means all of the caller's branches. The server limits results to the caller's branches regardless.
 - **No bulk downloads of clinic data.** Lists are paginated server-side (`range()` + `count: 'exact'`), filtered server-side, and dashboards use aggregate RPCs that return numbers, not rows.
 
 ## 2. Choosing the mechanism
 
 | Use | When | Examples |
 | --- | --- | --- |
-| **Direct table access under RLS** | One row, no derived numbers, the policy fully expresses who may do it | Register/edit a patient, book an appointment, record consent, order an investigation, branch CRUD, exam-field definitions |
-| **RPC, `SECURITY INVOKER`** | Several rows must change together, but the caller's own RLS is the right authority | `save_consultation`, `save_prescription_draft`, `book_follow_up`, `view_patient`, `dashboard_summary`, `doctor_overview` |
-| **RPC, `SECURITY DEFINER`** | Server-computed values (totals, numbers), state machines, or aggregates across rows the caller cannot read | `create_invoice`, `record_payment`, `record_refund`, `void_invoice`, `issue_prescription`, `revise_prescription`, `finalize_consultation`, `set_appointment_status`, `clinic_overview`, `clinic_trends`, `branch_metrics`, `reconcile_payment`, `platform_*` |
-| **Edge Function** | Needs the service-role key (Auth admin API, signed URLs) or a third-party call | `invite-member`, `document-url` |
+| **Direct table access under RLS** | One row, no derived numbers, the policy fully expresses who may do it | Edit a patient, book or reschedule an appointment, record consent, order an investigation, branch create/edit, exam-field definitions |
+| **RPC, `SECURITY INVOKER`** | Several rows must change together, but the caller's own RLS is the right authority | `save_consultation`, `save_prescription_draft`, `save_medical_profile`, `book_follow_up`, `view_patient` |
+| **RPC, `SECURITY DEFINER`** | Server-computed values, state machines, staff and permission changes, or aggregates across rows the caller cannot read | `register_patient`, `find_possible_duplicates`, `create_invoice`, `record_payment`, `record_refund`, `void_invoice`, `issue_prescription`, `revise_prescription`, `finalize_consultation`, `set_appointment_status`, `create_staff_member`, `set_staff_access`, `set_staff_branches`, `set_staff_status`, `save_role_template`, `set_branch_hours`, `my_access`, `org_overview`, `doctor_overview`, `clinic_trends`, `branch_metrics`, `clinical_report`, `staff_activity` |
+| **Edge Function** | Needs the service-role key (Auth admin API, signed URLs) | `staff-admin`, `document-url` |
 
 No extra API is added where RLS already says everything (for example there is no "get patient" endpoint; the table is read directly).
 
@@ -37,17 +38,17 @@ No extra API is added where RLS already says everything (for example there is no
 - If the session expires (`401`, `PGRST301`/`PGRST302`), the global query handler signs out locally and the sign-in page explains why.
 
 ### Authorization (never trust the client)
-- The `clinic_id` sent by the client is **only a filter**. Every RLS policy and every definer RPC re-derives access from `clinic_members` for `auth.uid()`, using `private.has_permission(clinic, key)`, `private.is_member`, `private.can_read_patient`, `private.can_read_clinical` and `private.in_branch_scope`.
-- Composite foreign keys `(x_id, clinic_id)` stop a row from referencing another clinic's patient or appointment, even when the client sends its own `clinic_id`.
-- Definer RPCs check permission **after** loading the target row under `FOR UPDATE`, using the row's `clinic_id`, not an argument.
-- The UI reads `my_permissions()` only to decide what to show.
+- Access is derived from `auth.uid()` only: `private.my_account()` (doctor, admin, or active staff), `private.can(key)`, `private.can_at(key, branch)`, `private.in_branch(branch)`, `private.can_see_patient(patient)` and `private.can_view_clinical(key, patient)`. A branch id sent by the client is **only a filter** or a target that is checked.
+- Definer RPCs check permission **after** loading the target row under `FOR UPDATE`, using the row's `branch_id`, not an argument.
+- Staff functions also apply `private.can_manage_staff` (never yourself; delegated managers only for staff whose branches are all theirs) and `private.can_grant` (doctor/admin: any non-doctor-only key; others: only keys they hold).
+- The UI reads `my_access()` only to decide what to show.
 
 ### Validation
 | Boundary | Validation |
 | --- | --- |
 | Forms (untrusted user input) | Zod schemas next to each feature (`*Schema.ts`), with unit tests. They convert rupees to paise and blanks to `null`. |
-| Edge Function bodies | Zod (`InviteSchema`, `BodySchema`); invalid input returns `400` before any privileged work. |
-| Database (final authority) | `CHECK` constraints, enums, composite foreign keys, triggers (state machines, immutability, clinic-configured field types) and RPC argument checks. Nothing relies on frontend validation alone. |
+| Edge Function bodies | Zod (`BodySchema` per function); invalid input returns `400` before any privileged work. |
+| Database (final authority) | `CHECK` constraints, enums, foreign keys, triggers (state machines, immutability, identity guards, contact-only patient edits, clinic-configured field types, working hours) and RPC argument checks. Nothing relies on frontend validation alone. |
 | Files | Type and size checked in the browser, then by the `patient_documents` checks, then by the bucket's own limits (see [SECURITY.md](SECURITY.md#phase-11--file-storage)). |
 
 ### Errors
@@ -67,111 +68,105 @@ Edge Functions return `{ error: string }` with HTTP `400 / 401 / 403 / 404 / 409
 ### Idempotency
 | Operation | Mechanism |
 | --- | --- |
-| `create_invoice`, `record_payment`, `record_refund` | `p_idempotency_key uuid`, stored on the created row with a unique index per clinic. A repeat returns the original row. The same key with different details is rejected (`23505`). The client generates one key per dialog or form with `useIdempotencyKey()` and renews it only after success. |
+| `create_invoice`, `record_payment`, `record_refund` | `p_idempotency_key uuid`, stored on the created row with a unique index. A repeat returns the original row. The same key with different details is rejected (`23505`). The client generates one key per dialog or form with `useIdempotencyKey()` and renews it only after success. |
 | `issue_prescription`, `finalize_consultation`, `void_invoice`, `revise_prescription` | Guarded by state. A repeat of a completed step either returns the current row (`finalize`, `void`) or fails with a clear message (`issue`, `revise`); it never acts twice. |
 | `save_consultation`, `save_prescription_draft` | Updates replace content atomically. A retried create may leave a second **draft**, which is harmless and visible in "My drafts". |
 | `book_follow_up` | Locks the follow-up and requires `status = 'pending'`, so a second booking fails. |
-| `accept_invitation`, `reconcile_payment`, `confirm_document_upload` | Naturally idempotent (they set state). |
-| `invite-member` | Upsert on `(clinic_id, user_id)`; an already-active member gets `409`. |
+| `accept_staff_invitation`, `reconcile_payment`, `confirm_document_upload`, `set_staff_access`, `set_staff_branches` | Naturally idempotent (they set or replace state). |
+| `register_patient` | Not idempotent by key: a retry re-runs the duplicate check, so a second identical registration is refused (`P0003`) unless the user confirms again. |
+| `staff-admin` `invite` | Re-sending links the same account again; a staff member who already joined gets `409`. |
 
 ## 4. Service reference
 
-Notation: *Input → Output*. "RLS" means direct table access whose policy is listed in DATABASE.md.
+Notation: *Input → Output*. "RLS" means direct table access whose policy is listed in DATABASE.md. No service takes a clinic id.
 
-### Authentication and membership — `services/auth.ts`, `services/clinic.ts`
+### Authentication and access — `services/auth.ts`, `services/organization.ts`
 | Function | Mechanism | Input → Output | Authorization |
 | --- | --- | --- | --- |
-| `signIn`, `signUp`, `requestPasswordReset`, `updatePassword`, `signOut` | Supabase Auth | credentials → session | Auth rate limits; reset never reveals whether an account exists |
-| `fetchMemberships(userId)` | RLS `clinic_members` | → `Membership[]` (active and invited, with clinic status) | own rows |
-| `fetchPermissions(clinicId)` | RPC `my_permissions` | → `Permission[]` | active membership in an active clinic |
-| `acceptInvitation(clinicId)` | RPC `accept_invitation` | → void | own invited membership |
-| `inviteMember({clinicId,email,fullName,roles,branchIds})` | Edge `invite-member` | → void | caller's JWT must hold `users.manage` (checked via `my_permissions`); plan limits; 20 per inviter per hour |
-| `updateMember`, `setMemberBranches` | RLS | → void | `users.manage`; the last admin is protected |
-| `fetchStaff`, `fetchDoctors`, `fetchProfileNames` | RLS | → lists | members of the clinic |
-| `listAccessReviews`, `recordAccessReview`, `fetchMemberActivity` | RLS / RPC `member_last_activity` | → reviews / last activity | `users.manage` |
-| `logSessionEvent` | RPC `log_session_event` | → void | membership (client-reported) |
+| `signIn`, `requestPasswordReset`, `updatePassword`, `signOut` | Supabase Auth | credentials → session | Auth rate limits; reset never reveals whether an account exists. There is no sign-up. |
+| `fetchMyAccess()` | RPC `my_access` | → account type, permissions, branches (or a `reason`: `invited`, `deactivated`, `no_access`) | own identity |
+| `acceptStaffInvitation()` | RPC `accept_staff_invitation` | → void | own invited staff record |
+| `logSessionEvent(event)` | RPC `log_session_event` | → void | signed in (client-reported) |
+| `fetchOrganization`, `updateOrganization` | RLS | → `Organization` | read: active accounts; write: `settings.organization` |
+| `fetchSettings`, `updateSettings` | RLS | → `OrganizationSettings` | same; preferences validated by trigger; the demo flag is operator-only |
+| `fetchBranches`, `saveBranch` | RLS | → `Branch` | read: active accounts; create, (de)activate, code, manager: `branches.manage`; contact details also `settings.branch` at that branch |
+| `fetchBranchHours`, `saveBranchHours` | RLS / RPC `set_branch_hours` | → `WorkingHours[]` | `branches.manage` or `settings.branch` at the branch; overlaps refused |
+| `fetchProfile`, `updateProfile`, `fetchPrimaryDoctor`, `fetchProfileNames`, `fetchAdministrators` | RLS `user_profiles` | → profiles | own profile editable (display fields only); names of colleagues for active accounts |
 
-### Clinics and branches — `services/clinic.ts`, `services/subscription.ts`
+### Staff and permissions — `services/staff.ts`
 | Function | Mechanism | Authorization |
 | --- | --- | --- |
-| `createClinic` | RPC `create_clinic` (definer) | any signed-in user; becomes admin on a trial plan |
-| `fetchClinic`, `updateClinic`, `updateClinicSettings` | RLS | read: members; write: `settings.manage`. Status changes are platform-only; settings shape is validated by trigger. |
-| `fetchBranches`, `saveBranch` | RLS | read: members; write: `settings.manage`; plan branch limit |
-| `fetchSubscription` | RLS | `subscription.read`; writes are platform RPCs only |
+| `listStaff`, `getStaffMember` | RLS | `staff.view` (staff sharing a branch; everyone for doctor/admin); own record always |
+| `createStaffMember({profile, roleId, branchIds, overrides})` | RPC `create_staff_member` | `staff.manage` (+ `staff.permissions` for overrides); branches within the caller's; grants within authority; not a doctor/admin email |
+| `updateStaffMember`, `setStaffBranches`, `setStaffAccess` | RPCs | `can_manage_staff` (never self); `setStaffAccess` also `staff.permissions` and grant authority; audited with keys granted and revoked |
+| `fetchStaffPermissionMatrix(id)` | RPC `staff_permission_matrix` | can see the staff member; per key: in template, override, effective, grantable by the caller |
+| `listRoleTemplates`, `saveRoleTemplate`, `deleteRoleTemplate` | RLS / RPCs | `staff.permissions`; account roles fixed; built-in or in-use templates cannot be deleted |
+| `fetchPermissionCatalog`, `fetchStaffActivity`, `fetchStaffLastActivity` | RLS / RPCs | active accounts / `staff.view` |
+| `sendStaffInvitation`, `sendStaffPasswordReset`, `setStaffStatus` | Edge `staff-admin` | `can_manage_staff_member` with the caller's JWT; deactivation requires a reason and bans the auth user |
+| `inviteAdministrator`, `setAdministratorActive` | Edge `staff-admin` | primary doctor only |
 
 ### Patients — `services/patients.ts`, `services/consents.ts`
 | Function | Mechanism | Input → Output | Notes |
 | --- | --- | --- | --- |
-| `listPatients(clinicId, {search,page,pageSize,sort,status,doctorId})` | RLS, paginated | → `Page<PatientListItem>` | search escaped for PostgREST; doctors see assigned or booked patients only |
-| `viewPatient(id)` | RPC `view_patient` (invoker) | → `Patient` | audits `patients.viewed` (10-minute collapse); brake at 300 opens per 10 minutes (audited, then `54000`) |
-| `getPatient` | RLS | → `Patient` | no audit; for pickers and print headers |
-| `createPatient`, `updatePatient` | RLS | `PatientInput` → `Patient` | doctors can only self-assign |
+| `listPatients({search,page,pageSize,sort,status,branchId})` | RLS, paginated | → `Page<PatientListItem>` | organization-wide with `patients.view_basic`; billing staff see patients they bill at their branches |
+| `findPossibleDuplicates(input)` | RPC | → `DuplicateCandidate[]` | same phone, or similar name with matching date of birth or age |
+| `registerPatient(input, branchId, duplicateReviewed)` | RPC `register_patient` | → `Patient` | `patients.create` at the branch; refuses likely duplicates with `P0003` until reviewed; the review is audited |
+| `viewPatient(id)` | RPC `view_patient` (invoker) | → `Patient` | audits `patients.viewed`; brake at 300 opens per 10 minutes |
+| `getPatient`, `updatePatient` | RLS | → `Patient` | `edit_contact` changes contact fields only; `edit` for identity; status needs `edit` or `delete` |
+| `getMedicalProfile`, `saveMedicalProfile` | RLS / RPC (invoker) | → `MedicalProfile` | read: `patients.view_history` + a visit at the caller's branch; write: the doctor |
 | `listConsents`, `grantConsent`, `withdrawConsent` | RLS | → consent rows | `consents.manage`; append-only, withdrawal only |
 
 ### Appointments — `services/appointments.ts`
 | Function | Mechanism | Notes |
 | --- | --- | --- |
-| `listAppointments({from,to,doctorId,patientId,statuses})`, `getAppointment` | RLS | branch-scoped; doctors see their own |
-| `createAppointment`, `rescheduleAppointment` | RLS | `appointments.manage`; overlap → `23P01`; branch defaults to member or primary |
-| `setAppointmentStatus(id, status, reason)` | RPC (definer) | state machine; cancellation reason required |
-| `bookFollowUp` | RPC `book_follow_up` (invoker) | appointment + follow-up link in one transaction |
+| `listAppointments({from,to,branchId,patientId,statuses})`, `getAppointment` | RLS | `appointments.view` at the branch |
+| `createAppointment`, `rescheduleAppointment` | RLS | `appointments.create` / `reschedule` at the branch; one calendar, so overlap anywhere → `23P01`; active branch and working hours enforced |
+| `setAppointmentStatus(id, status, reason)` | RPC (definer) | `cancel`, `update_status`, or the doctor; state machine; cancellation reason required |
+| `bookFollowUp` | RPC `book_follow_up` (invoker) | `follow_ups.manage` + `appointments.create`; one transaction |
 
-### Consultations and Ayurvedic examinations — `services/clinical.ts`
+### Clinical — `services/clinical.ts`
 | Function | Mechanism | Notes |
 | --- | --- | --- |
-| `listConsultations`, `getConsultation` | RLS | clinical access + branch scope |
-| `saveConsultation(clinicId, input, exam, id?)` | RPC `save_consultation` (invoker) | consultation + examination atomically; custom fields validated against definitions |
-| `finalizeConsultation(id)` | RPC (definer) | treating doctor only; locks the record; creates the follow-up |
-| `listAmendments`, `addAmendment` | RLS | treating doctor, finalized records only; append-only |
-| `listExamFields`, `saveExamField` | RLS | read: members; write: `settings.manage`; key immutable |
-| `listFollowUps` | RLS | clinicians and appointment managers |
+| `listConsultations({patientId,branchId,status})`, `getConsultation` | RLS | `consultations.view` at the visit branch; examinations need `examinations.view` |
+| `saveConsultation(input, exam, id?)` | RPC (invoker) | doctor only; consultation + examination atomically |
+| `finalizeConsultation(id)` | RPC (definer) | doctor only; locks; creates the follow-up at the visit branch |
+| `listAmendments`, `addAmendment` | RLS | doctor; finalized records only; append-only |
+| `searchPrescriptions`, `getPrescription`, `listPrescriptions`, `listPrescriptionRevisions` | RLS | `prescriptions.view` at the branch; drafts only for the doctor |
+| `savePrescriptionDraft`, `issuePrescription`, `revisePrescription`, `cancelPrescription`, `listTemplates`, `saveTemplate` | RPC / RLS | doctor only; issue requires confirmation and writes an immutable snapshot |
+| `listInvestigations`, `listOpenInvestigations`, `orderInvestigation`, `updateInvestigation` | RLS | view at the branch; order and results: doctor; `investigations.manage`: status only |
+| `listExamFields`, `saveExamField` | RLS | read: active accounts; write: `settings.organization` |
+| `listFollowUps({status,dueBefore,branchId,patientId})` | RLS | `follow_ups.view` at the branch |
 
-### Prescriptions — `services/clinical.ts`
+### Files — `services/documents.ts`
 | Function | Mechanism | Notes |
 | --- | --- | --- |
-| `searchPrescriptions(params)` | RLS, paginated | admins: issued and cancelled only |
-| `getPrescription`, `listPrescriptions`, `listPrescriptionRevisions` | RLS | |
-| `savePrescriptionDraft(clinicId, {patient_id, consultation_id, header}, items, id?)` | RPC (invoker) | header + items replaced atomically |
-| `issuePrescription(id, clinicianConfirmed)` | RPC (definer) | requires `true`; assigns `RX-YYYY-NNNNNN`; writes an immutable revision snapshot |
-| `revisePrescription(id, reason)`, `cancelPrescription` | RPC / RLS | reason required; number kept; earlier revisions unchanged |
-| `listTemplates`, `saveTemplate` | RLS | owner or shared; content validated; never generated by the app |
+| `uploadDocument({patientId, branchId, …}, onProgress)` | RLS insert → Storage upload → RPC `confirm_document_upload` | `investigations.upload` at the branch; path assigned by the server |
+| `getDocumentUrl(id)` | Edge `document-url` | RLS read with the caller's JWT (`documents.view` at the branch), audit, 60-second signed URL |
+| `listDocuments`, `deleteDocument(id, reason)` | RLS / RPC | soft delete with reason; `documents.delete` |
 
-### Investigations and files — `services/clinical.ts`, `services/documents.ts`
+### Billing — `services/billing.ts`
 | Function | Mechanism | Notes |
 | --- | --- | --- |
-| `listInvestigations`, `orderInvestigation`, `updateInvestigation` | RLS | clinical write access |
-| `uploadDocument(clinicId, input, onProgress)` | RLS insert → Storage upload (XHR, progress) → RPC `confirm_document_upload` | type and size pre-checked; display name sanitised; path assigned by the server |
-| `getDocumentUrl(id)` | Edge `document-url` | RLS check with the caller's JWT, audit, 60-second signed URL; 120 per user per 10 minutes |
-| `listDocuments`, `deleteDocument(id, reason)` | RLS / RPC | soft delete with reason |
-
-### Billing and payments — `services/billing.ts`
-| Function | Mechanism | Notes |
-| --- | --- | --- |
-| `listInvoices`, `getInvoice` | RLS, paginated | branch-scoped |
-| `createInvoice({…, idempotencyKey})` | RPC (definer) | totals computed server-side in paise |
-| `recordPayment({…, idempotencyKey})`, `recordRefund({…, idempotencyKey})` | RPC (definer) | row-locked; no overpayment or over-refund; receipt and refund numbers |
-| `voidInvoice` | RPC (definer) | unpaid invoices only, reason required |
-| `listPayments`, `getPayment`, `reconcilePayment` | RLS / RPC | amounts immutable; reconciliation fields only |
+| `listInvoices({…, branchId})`, `getInvoice`, `listPayments`, `getPayment` | RLS | `billing.view` at the branch |
+| `createInvoice({…, branchId, idempotencyKey})` | RPC (definer) | `billing.create` at the branch (the appointment's branch when billing a visit); totals in paise |
+| `recordPayment`, `recordRefund`, `voidInvoice`, `reconcilePayment` | RPC (definer) | `payments.record` / `refund` / `billing.void` / `payments.reconcile` at the invoice's branch; row-locked |
 
 ### Reports — `services/reports.ts`
-`fetchDashboardSummary`, `fetchDoctorOverview` (invoker: counts only what the caller can see); `fetchClinicOverview`, `fetchClinicTrends`, `fetchBranchMetrics`, `fetchRevenueReport`, `fetchPaymentMethodReport`, `fetchAppointmentStatusReport` (definer or `reports.read`: numbers only, branch-scoped, ranges up to one year); `fetchRecentPatients` (own view events only).
+All take `branchId | null` and a date range of up to a year, and return numbers only. `fetchOverview` (`org_overview`: operational, financial sections present only with `reports.operational` / `reports.financial`), `fetchClinicTrends`, `fetchBranchMetrics` (financial columns null without `reports.financial`), `fetchRevenueReport`, `fetchPaymentMethodReport` (`reports.financial`), `fetchAppointmentStatusReport` (`reports.operational`), `fetchClinicalReport` (`reports.clinical`), `fetchDoctorOverview` (primary doctor only), `fetchRecentPatients` (own view events).
 
-### Notifications — `services/notifications.ts`
-`listNotifications(clinicId)` and `markNotificationsRead(ids)`. Own rows only; only `read_at` may be updated. Notifications are created by database triggers and have generic titles (no patient names).
-
-### Audit events — `services/audit.ts`
-`listAuditEvents(clinicId, {page, pageSize, entityType, action})`, requiring `audit.read`. Read-only; append-only table. Events are written only by triggers, definer RPCs and the `document-url` function.
+### Notifications and audit — `services/notifications.ts`, `services/audit.ts`
+`listNotifications()`, `markNotificationsRead(ids)`: own rows; only `read_at` may change. The doctor is notified of bookings and cancellations by others and of results. `listAuditEvents({page,pageSize,entityType,action,branchId})`: `audit.view`; doctor and admin see everything, staff their branches and own actions.
 
 ## 5. Edge Functions
 
-| | `invite-member` | `document-url` |
+| | `staff-admin` | `document-url` |
 | --- | --- | --- |
-| Purpose | Invite staff (Auth admin API) and create an invited membership | Short-lived download link for a patient document |
-| Request | `POST { clinicId, email, fullName, roles: ('admin'\|'doctor')[], branchIds?: uuid[] }` | `POST { documentId: uuid }` |
-| Response | `200 { userId, invited }` | `200 { url, expiresIn: 60 }` |
+| Purpose | Staff invitations, password resets, activation (with sign-in blocking), administrator appointment | Short-lived download link for a patient document |
+| Request | `POST { action: 'invite' \| 'reset_password', staffId }`, `{ action: 'set_status', staffId, status, reason? }`, `{ action: 'invite_admin', email, fullName }`, `{ action: 'set_admin_status', userId, active }` | `POST { documentId: uuid }` |
+| Response | `200 { userId }` or `{ ok: true }` | `200 { url, expiresIn: 60 }` |
 | Authentication | `verify_jwt = true`; `auth.getUser()` with the caller's JWT | same |
-| Authorization | `users.manage` in `clinicId`, checked with the **caller's** client | RLS `SELECT` on `patient_documents` with the caller's client (missing and forbidden both give `404`) |
-| Rate limit | 20 per inviter per hour → `429` | 120 per user per 10 minutes → `429` |
-| Privileged step | service role: invite email, membership upsert, branch scope | service role: audit `patient_documents.accessed`, then sign the URL. If the audit write fails, **no URL** is returned. |
-| Errors | `400` invalid body, `401`, `403`, `409` already a member, `422` plan limit, `429`, `500` | `400`, `401`, `404`, `429`, `500` |
+| Authorization | staff actions: `can_manage_staff_member` with the **caller's** client (and the database function checks again); admin actions: `my_access().account_type = 'primary_doctor'` | RLS `SELECT` on `patient_documents` with the caller's client (missing and forbidden both give `404`) |
+| Rate limit | 20 per caller per hour → `429` | 120 per user per 10 minutes → `429` |
+| Privileged step | service role: invite email, `link_staff_account` / `link_admin_account` (email must match; only `staff` accounts), ban or unban the auth user | service role: audit `patient_documents.accessed`, then sign the URL; no audit, no URL |
+| Errors | `400`, `401`, `403`, `404`, `409` already joined or wrong account, `422` reason required, `429`, `502` email failed | `400`, `401`, `404`, `429`, `500` |
 | CORS | `ALLOWED_ORIGINS` allowlist | same |

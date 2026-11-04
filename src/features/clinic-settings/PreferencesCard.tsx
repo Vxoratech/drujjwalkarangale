@@ -5,11 +5,11 @@ import { FormField, FormGrid } from '@/components/forms/FormField';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { Checkbox, Select } from '@/components/ui/Input';
-import { useClinic } from '@/features/clinic/ClinicProvider';
+import { useAccess } from '@/features/access/AccessProvider';
 import { qk } from '@/lib/query/keys';
 import { useI18n, type TranslationKey } from '@/locales/i18n';
-import { updateClinicSettings } from '@/services/clinic';
-import { CONSULTATION_SECTIONS, type ClinicSettings, type ConsultationSection } from '@/types/domain';
+import { updateSettings } from '@/services/organization';
+import { CONSULTATION_SECTIONS, type ClinicPreferences, type ConsultationSection } from '@/types/domain';
 
 const SECTION_LABELS: Record<ConsultationSection, TranslationKey> = {
   pain: 'history.vedanaVishesha',
@@ -21,23 +21,23 @@ const SECTION_LABELS: Record<ConsultationSection, TranslationKey> = {
   clinic_fields: 'exam.clinicFields',
 };
 
-/** Clinic-wide preferences stored in clinics.settings (validated server-side). */
+/** Clinic-wide preferences stored in clinic_settings.preferences (validated server-side). */
 export function PreferencesCard() {
   const { t } = useI18n();
-  const { clinicId, clinic } = useClinic();
+  const { settings, organization } = useAccess();
   const queryClient = useQueryClient();
-  const [draft, setDraft] = useState<ClinicSettings>(clinic.settings);
+  const [draft, setDraft] = useState<ClinicPreferences>(settings.preferences);
   const sections = draft.consultation_sections ?? {};
-  const dirty = JSON.stringify(draft) !== JSON.stringify(clinic.settings);
+  const dirty = JSON.stringify(draft) !== JSON.stringify(settings.preferences);
 
   const save = useMutation({
     mutationFn: () => {
-      // The demo flag is platform-managed; never send it back.
+      // The demo flag is operator-managed; always send back the stored value.
       const { demo: _demo, ...rest } = draft;
-      return updateClinicSettings(clinicId, { ...rest, ...(clinic.settings.demo !== undefined ? { demo: clinic.settings.demo } : {}) });
+      return updateSettings(organization.id, { preferences: { ...rest, ...(settings.preferences.demo !== undefined ? { demo: settings.preferences.demo } : {}) } });
     },
     onSuccess: (saved) => {
-      queryClient.setQueryData(qk.clinic(clinicId), saved);
+      queryClient.setQueryData(qk.settings(), saved);
       notify.success(t('settings.saved'));
     },
     onError: (e) => notify.error(e),
@@ -58,7 +58,7 @@ export function PreferencesCard() {
           <FormField label={t('settings.rxLanguage')}>
             <Select
               value={draft.prescription_language ?? 'patient'}
-              onChange={(e) => setDraft({ ...draft, prescription_language: e.target.value as ClinicSettings['prescription_language'] })}
+              onChange={(e) => setDraft({ ...draft, prescription_language: e.target.value as ClinicPreferences['prescription_language'] })}
               options={[
                 { value: 'patient', label: t('settings.rxLanguagePatient') },
                 { value: 'en', label: 'English' },

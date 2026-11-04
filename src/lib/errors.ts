@@ -52,7 +52,6 @@ const SAFE_MESSAGES: readonly RegExp[] = [
   /^This request key was already used for a different (payment|refund|invoice)$/,
 ];
 
-
 const BY_CODE: Record<string, TranslationKey> = {
   '42501': 'errors.permission',
   '23505': 'errors.duplicate',

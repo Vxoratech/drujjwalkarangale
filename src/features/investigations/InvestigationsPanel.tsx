@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Dialog';
 import { Input, Select, Textarea } from '@/components/ui/Input';
 import { useCurrentUser } from '@/features/auth/AuthProvider';
-import { useClinic } from '@/features/clinic/ClinicProvider';
+import { useAccess } from '@/features/access/AccessProvider';
 import { formatDate } from '@/lib/formatters';
 import { qk } from '@/lib/query/keys';
 import { useFieldError } from '@/lib/validation/useFieldError';
@@ -37,16 +37,18 @@ const resultSchema = z.object({
 function OrderDialog({ open, onOpenChange, patientId, consultationId }: { open: boolean; onOpenChange: (o: boolean) => void; patientId: UUID; consultationId?: UUID | null }) {
   const { t } = useI18n();
   const user = useCurrentUser();
-  const { clinicId } = useClinic();
+  const { defaultBranchId } = useAccess();
   const queryClient = useQueryClient();
   const fieldError = useFieldError();
   const form = useForm<z.infer<typeof orderSchema>>({ resolver: zodResolver(orderSchema), defaultValues: { test_name: '', category: 'laboratory', instructions: '' } });
 
   const mutation = useMutation({
     mutationFn: (v: z.infer<typeof orderSchema>) =>
-      orderInvestigation(clinicId, {
+      orderInvestigation({
         patient_id: patientId,
         consultation_id: consultationId ?? null,
+        // Without a consultation the order is filed at the current branch.
+        branch_id: consultationId ? null : defaultBranchId,
         ordered_by: user.id,
         test_name: v.test_name,
         category: v.category as InvestigationCategory,
@@ -54,7 +56,7 @@ function OrderDialog({ open, onOpenChange, patientId, consultationId }: { open: 
       }),
     onSuccess: async () => {
       notify.success(t('investigations.ordered'));
-      await queryClient.invalidateQueries({ queryKey: [clinicId, 'investigations'] });
+      await queryClient.invalidateQueries({ queryKey: ['investigations'] });
       form.reset();
       onOpenChange(false);
     },
@@ -94,7 +96,8 @@ function OrderDialog({ open, onOpenChange, patientId, consultationId }: { open: 
 
 function ResultDialog({ investigation, onOpenChange }: { investigation: Investigation | null; onOpenChange: (o: boolean) => void }) {
   const { t } = useI18n();
-  const { clinicId } = useClinic();
+  const { can } = useAccess();
+  const clinical = can('investigations.order');
   const queryClient = useQueryClient();
   const form = useForm<z.infer<typeof resultSchema>>({
     resolver: zodResolver(resultSchema),
@@ -104,15 +107,14 @@ function ResultDialog({ investigation, onOpenChange }: { investigation: Investig
   const mutation = useMutation({
     mutationFn: async (v: z.infer<typeof resultSchema>) => {
       if (!investigation) return;
-      await updateInvestigation(clinicId, investigation.id, {
-        status: v.status as InvestigationStatus,
-        result_summary: v.result_summary || null,
-        notes: v.notes || null,
-      });
+      await updateInvestigation(
+        investigation.id,
+        clinical ? { status: v.status as InvestigationStatus, result_summary: v.result_summary || null, notes: v.notes || null } : { status: v.status as InvestigationStatus },
+      );
     },
     onSuccess: async () => {
       notify.success(t('investigations.updated'));
-      await queryClient.invalidateQueries({ queryKey: [clinicId, 'investigations'] });
+      await queryClient.invalidateQueries({ queryKey: ['investigations'] });
       onOpenChange(false);
     },
     onError: (e) => notify.error(e),
@@ -138,12 +140,16 @@ function ResultDialog({ investigation, onOpenChange }: { investigation: Investig
         <FormField label={t('investigations.status')}>
           <Select options={(['ordered', 'sample_collected', 'resulted', 'cancelled'] as const).map((s) => ({ value: s, label: t(`investigationStatus.${s}`) }))} {...form.register('status')} />
         </FormField>
-        <FormField label={t('investigations.result')}>
-          <Textarea rows={4} {...form.register('result_summary')} />
-        </FormField>
-        <FormField label={t('investigations.notes')}>
-          <Textarea rows={2} {...form.register('notes')} />
-        </FormField>
+        {clinical && (
+          <>
+            <FormField label={t('investigations.result')}>
+              <Textarea rows={4} {...form.register('result_summary')} />
+            </FormField>
+            <FormField label={t('investigations.notes')}>
+              <Textarea rows={2} {...form.register('notes')} />
+            </FormField>
+          </>
+        )}
       </form>
     </Modal>
   );
@@ -151,13 +157,15 @@ function ResultDialog({ investigation, onOpenChange }: { investigation: Investig
 
 export function InvestigationsPanel({ patientId, consultationId, canWrite }: { patientId: UUID; consultationId?: UUID | null; canWrite: boolean }) {
   const { t } = useI18n();
-  const { clinicId } = useClinic();
+  const { can } = useAccess();
+  const canTrack = canWrite || can('investigations.manage');
+  const canAttach = can('investigations.upload');
   const [ordering, setOrdering] = useState(false);
   const [editing, setEditing] = useState<Investigation | null>(null);
   const [attaching, setAttaching] = useState<Investigation | null>(null);
   const openDocument = useOpenDocument();
-  const query = useQuery({ queryKey: qk.investigations(clinicId, { patientId }), queryFn: () => listInvestigations(clinicId, { patientId }) });
-  const docs = useQuery({ queryKey: [clinicId, 'documents', patientId], queryFn: () => listDocuments(clinicId, { patientId }) });
+  const query = useQuery({ queryKey: qk.investigations({ patientId }), queryFn: () => listInvestigations({ patientId }) });
+  const docs = useQuery({ queryKey: ['documents', patientId], queryFn: () => listDocuments({ patientId }) });
   const docsFor = (id: string) => (docs.data ?? []).filter((d) => d.investigation_id === id);
 
   return (
@@ -195,15 +203,15 @@ export function InvestigationsPanel({ patientId, consultationId, canWrite }: { p
               </div>
               <div className="flex items-center gap-2">
                 <StatusBadge status={inv.status} label={t(`investigationStatus.${inv.status}`)} />
-                {canWrite && inv.status !== 'cancelled' && (
-                  <>
-                    <Button size="sm" variant="ghost" onClick={() => setAttaching(inv)}>
-                      {t('investigations.attachReport')}
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setEditing(inv)}>
-                      {t('investigations.recordResult')}
-                    </Button>
-                  </>
+                {inv.status !== 'cancelled' && canAttach && (
+                  <Button size="sm" variant="ghost" onClick={() => setAttaching(inv)}>
+                    {t('investigations.attachReport')}
+                  </Button>
+                )}
+                {inv.status !== 'cancelled' && canTrack && (
+                  <Button size="sm" variant="ghost" onClick={() => setEditing(inv)}>
+                    {canWrite ? t('investigations.recordResult') : t('investigations.updateStatus')}
+                  </Button>
                 )}
               </div>
             </li>

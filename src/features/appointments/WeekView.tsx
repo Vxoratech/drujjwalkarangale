@@ -20,12 +20,13 @@ const toneBorder: Record<string, string> = {
 export function WeekView({
   weekStart,
   appointments,
-  doctorNames,
+  branchName,
   onPickDay,
 }: {
   weekStart: string;
   appointments: AppointmentWithPatient[];
-  doctorNames?: Map<string, string>;
+  /** When set, each card shows the branch (several branches in view). */
+  branchName?: (id: string) => string;
   onPickDay: (date: string) => void;
 }) {
   const { t, locale } = useI18n();
@@ -62,7 +63,7 @@ export function WeekView({
                     >
                       <span className="tabular block font-medium">{formatTime(a.starts_at)}</span>
                       <span className="block truncate">{fullName(a.patient)}</span>
-                      {doctorNames && <span className="block truncate text-ink-muted">{doctorNames.get(a.doctor_id)}</span>}
+                      {branchName && <span className="block truncate text-ink-muted">{branchName(a.branch_id)}</span>}
                       <span className="block text-[11px] text-ink-muted">{t(`appointmentStatus.${a.status}`)}</span>
                     </Link>
                   </li>

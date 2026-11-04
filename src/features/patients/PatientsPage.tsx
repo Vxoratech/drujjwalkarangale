@@ -5,14 +5,12 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { EmptyState, ErrorState, SkeletonRows } from '@/components/feedback/States';
 import { PatientIdentity } from '@/components/data-display/Avatar';
 import { DataTable, type Column, type SortState } from '@/components/data-display/DataTable';
-import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { SearchInput, Select } from '@/components/ui/Input';
 import { PageHeader, Toolbar } from '@/components/ui/PageHeader';
-import { useClinic } from '@/features/clinic/ClinicProvider';
+import { useAccess } from '@/features/access/AccessProvider';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
-import { useDoctors } from '@/hooks/useDoctors';
 import { ageLabel, formatDate, fullName, maskPhone } from '@/lib/formatters';
 import { qk } from '@/lib/query/keys';
 import { useI18n } from '@/locales/i18n';
@@ -24,8 +22,7 @@ const PAGE_SIZE = 20;
 
 export function PatientsPage() {
   const { t } = useI18n();
-  const { clinicId, can } = useClinic();
-  const { names, doctors } = useDoctors();
+  const { can, branches, branchName } = useAccess();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const [search, setSearch] = useState(params.get('q') ?? '');
@@ -33,7 +30,8 @@ export function PatientsPage() {
   const [sort, setSort] = useState<SortState>({ key: 'created_at', direction: 'desc' });
   const [formOpen, setFormOpen] = useState(params.get('new') === '1');
   const [status, setStatus] = useState<PatientStatus | 'all'>('active');
-  const [doctorFilter, setDoctorFilter] = useState('');
+  // Patients are central; this narrows to the registering branch only.
+  const [branchFilter, setBranchFilter] = useState('');
   const debounced = useDebouncedValue(search);
 
   useEffect(() => setPage(1), [debounced]);
@@ -46,8 +44,8 @@ export function PatientsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debounced]);
 
-  const listParams: PatientListParams = { search: debounced, page, pageSize: PAGE_SIZE, sort: sort as PatientListParams['sort'], status, doctorId: (doctorFilter || undefined) as PatientListParams['doctorId'] };
-  const query = useQuery({ queryKey: qk.patients(clinicId, listParams), queryFn: () => listPatients(clinicId, listParams), placeholderData: keepPreviousData });
+  const listParams: PatientListParams = { search: debounced, page, pageSize: PAGE_SIZE, sort: sort as PatientListParams['sort'], status, branchId: branchFilter || undefined };
+  const query = useQuery({ queryKey: qk.patients(listParams), queryFn: () => listPatients(listParams), placeholderData: keepPreviousData });
 
   const columns: Column<PatientListItem>[] = [
     {
@@ -71,8 +69,9 @@ export function PatientsPage() {
       ),
     },
     { key: 'phone', header: t('patients.phone'), cell: (p) => <span className="tabular text-ink-muted">{maskPhone(p.phone)}</span> },
-    { key: 'prakriti', header: t('patients.prakriti'), hideBelow: 'lg', cell: (p) => (p.prakriti ? <Badge tone="forest">{t(`prakriti.${p.prakriti}`)}</Badge> : <span className="text-ink-muted">—</span>) },
-    { key: 'doctor', header: t('patients.assignedDoctor'), hideBelow: 'lg', cell: (p) => <span className="text-ink-muted">{p.assigned_doctor_id ? names.get(p.assigned_doctor_id) ?? '—' : t('patients.unassigned')}</span> },
+    ...(branches.length > 1
+      ? [{ key: 'branch', header: t('patients.registeredAt'), hideBelow: 'lg' as const, cell: (p: PatientListItem) => <span className="text-ink-muted">{branchName(p.registered_branch_id)}</span> }]
+      : []),
     { key: 'created_at', header: t('patients.registered'), sortable: true, align: 'right', cell: (p) => <span className="tabular text-ink-muted">{formatDate(p.created_at)}</span> },
   ];
 
@@ -94,17 +93,17 @@ export function PatientsPage() {
           <div className="w-full sm:max-w-sm">
             <SearchInput value={search} onValueChange={setSearch} placeholder={t('patients.searchPlaceholder')} aria-label={t('patients.searchPlaceholder')} clearLabel={t('common.clearFilters')} />
           </div>
-          {can('patients.read_all') && (
+          {branches.length > 1 && (
             <div className="sm:ml-auto sm:min-w-[11rem]">
               <Select
-                aria-label={t('patients.assignedDoctor')}
-                value={doctorFilter}
+                aria-label={t('patients.registeredAt')}
+                value={branchFilter}
                 onChange={(e) => {
-                  setDoctorFilter(e.target.value);
+                  setBranchFilter(e.target.value);
                   setPage(1);
                 }}
-                placeholder={t('appointments.allDoctors')}
-                options={[{ value: 'none', label: t('patients.unassigned') }, ...doctors.map((d) => ({ value: d.user_id, label: d.full_name }))]}
+                placeholder={t('branches.allBranches')}
+                options={branches.map((b) => ({ value: b.id, label: b.name }))}
               />
             </div>
           )}

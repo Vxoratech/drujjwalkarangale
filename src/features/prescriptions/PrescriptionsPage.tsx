@@ -10,40 +10,37 @@ import { IconButton } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { DateInput, SearchInput, Select } from '@/components/ui/Input';
 import { PageHeader, Toolbar } from '@/components/ui/PageHeader';
-import { useClinic } from '@/features/clinic/ClinicProvider';
+import { useAccess } from '@/features/access/AccessProvider';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
-import { useDoctors } from '@/hooks/useDoctors';
 import { formatDate, fullName, istDayRange } from '@/lib/formatters';
 import { useI18n } from '@/locales/i18n';
 import { searchPrescriptions, type PrescriptionListItem, type PrescriptionSearchParams } from '@/services/clinical';
 
 const PAGE_SIZE = 20;
 
-/** Clinic-wide prescription search. Admins see issued/cancelled prescriptions only (enforced by RLS). */
+/** Prescription search. Drafts are visible only to the doctor; staff see their branches (enforced by RLS). */
 export function PrescriptionsPage() {
   const { t } = useI18n();
-  const { clinicId, can } = useClinic();
-  const { doctors, names } = useDoctors();
+  const { can, branchFilter, branches, branchName } = useAccess();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<'' | 'issued' | 'draft' | 'cancelled'>('');
-  const [doctorId, setDoctorId] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [page, setPage] = useState(1);
   const debounced = useDebouncedValue(search);
-  const canSeeDrafts = can('clinical.write');
+  const canSeeDrafts = can('prescriptions.create');
 
   const params: PrescriptionSearchParams = {
     page,
     pageSize: PAGE_SIZE,
     search: debounced || undefined,
     status: status || undefined,
-    doctorId: doctorId || undefined,
+    branchId: branchFilter,
     from: from ? istDayRange(from).from : undefined,
     to: to ? istDayRange(to).to : undefined,
   };
-  const query = useQuery({ queryKey: [clinicId, 'prescriptions', 'search', params], queryFn: () => searchPrescriptions(clinicId, params), placeholderData: keepPreviousData });
+  const query = useQuery({ queryKey: ['prescriptions', 'search', params], queryFn: () => searchPrescriptions(params), placeholderData: keepPreviousData });
   const reset = () => setPage(1);
 
   const columns: Column<PrescriptionListItem>[] = [
@@ -58,7 +55,7 @@ export function PrescriptionsPage() {
     },
     { key: 'patient', header: t('billing.patient'), cell: (rx) => <PatientIdentity name={fullName(rx.patient)} code={rx.patient?.patient_code} /> },
     { key: 'medicines', header: t('prescriptions.medicine'), hideBelow: 'lg', cell: (rx) => <span className="line-clamp-1 text-ink-muted">{rx.items.map((i) => i.medicine_name).join(', ') || '—'}</span> },
-    { key: 'doctor', header: t('appointments.doctor'), hideBelow: 'md', cell: (rx) => names.get(rx.doctor_id) ?? '—' },
+    ...(branches.length > 1 ? [{ key: 'branch', header: t('appointments.branch'), hideBelow: 'md' as const, cell: (rx: PrescriptionListItem) => branchName(rx.branch_id) }] : []),
     { key: 'date', header: t('billing.date'), cell: (rx) => <span className="tabular text-ink-muted">{formatDate(rx.issued_at ?? rx.created_at)}</span> },
     {
       key: 'status',
@@ -99,9 +96,6 @@ export function PrescriptionsPage() {
                 placeholder={t('common.all')}
                 options={(canSeeDrafts ? (['issued', 'draft', 'cancelled'] as const) : (['issued', 'cancelled'] as const)).map((s) => ({ value: s, label: t(`prescriptionStatus.${s}`) }))}
               />
-            </div>
-            <div className="min-w-[10rem]">
-              <Select aria-label={t('appointments.doctor')} value={doctorId} onChange={(e) => { setDoctorId(e.target.value); reset(); }} placeholder={t('appointments.allDoctors')} options={doctors.map((d) => ({ value: d.user_id, label: d.full_name }))} />
             </div>
             <DateInput aria-label={t('reports.from')} value={from} max={to || undefined} onChange={(e) => { setFrom(e.target.value); reset(); }} className="w-auto" />
             <DateInput aria-label={t('reports.to')} value={to} min={from || undefined} onChange={(e) => { setTo(e.target.value ? e.target.value : ''); reset(); }} className="w-auto" />

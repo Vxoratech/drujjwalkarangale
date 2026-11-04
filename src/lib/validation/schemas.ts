@@ -28,12 +28,6 @@ export const signInSchema = z.object({
   password: z.string().min(1),
 });
 
-export const signUpSchema = z.object({
-  fullName: requiredText(120, 2),
-  email: z.string().trim().email(),
-  password: passwordSchema,
-});
-
 export const setPasswordSchema = z
   .object({ password: passwordSchema, confirm: z.string() })
   .refine((v) => v.password === v.confirm, { path: ['confirm'], message: 'passwordsMatch' });

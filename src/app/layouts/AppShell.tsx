@@ -1,16 +1,17 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bell, Building2, Check, ChevronsLeft, ChevronsRight, Languages, LogOut, Menu, UserRound } from 'lucide-react';
+import { Bell, Check, ChevronsLeft, ChevronsRight, Languages, LogOut, Menu, UserRound } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import * as RadixDialog from '@radix-ui/react-dialog';
-import { NAV_SECTIONS } from '@/app/navigation';
+import { navigationFor } from '@/app/navigation';
+import { BranchFilter } from '@/components/ui/BranchFilter';
 import { Avatar } from '@/components/data-display/Avatar';
 import { BrandLockup, BrandMark } from '@/components/ui/BrandMark';
 import { IconButton } from '@/components/ui/Button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/DropdownMenu';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { useCurrentUser } from '@/features/auth/AuthProvider';
-import { useClinic } from '@/features/clinic/ClinicProvider';
+import { useAccess } from '@/features/access/AccessProvider';
 import { cn } from '@/lib/cn';
 import { formatDateTime } from '@/lib/formatters';
 import { qk } from '@/lib/query/keys';
@@ -23,10 +24,10 @@ const COLLAPSE_KEY = 'vaidyora.sidebarCollapsed';
 
 function SidebarNav({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
   const { t } = useI18n();
-  const { can } = useClinic();
+  const { can, account } = useAccess();
   return (
     <nav aria-label={t('nav.main')} className="flex-1 space-y-6 overflow-y-auto px-3 py-4">
-      {NAV_SECTIONS.map((section) => {
+      {navigationFor(account).map((section) => {
         const items = section.items.filter((i) => can(i.requirement));
         if (items.length === 0) return null;
         return (
@@ -68,16 +69,15 @@ function SidebarNav({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?
 
 function NotificationsMenu() {
   const { t } = useI18n();
-  const { clinicId } = useClinic();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const { data = [] } = useQuery({ queryKey: qk.notifications(clinicId), queryFn: () => listNotifications(clinicId), refetchInterval: 60_000 });
+  const { data = [] } = useQuery({ queryKey: qk.notifications(), queryFn: () => listNotifications(), refetchInterval: 60_000 });
   const unread = data.filter((n) => !n.read_at);
 
   async function markAll() {
     try {
       await markNotificationsRead(unread.map((n) => n.id));
-      await queryClient.invalidateQueries({ queryKey: qk.notifications(clinicId) });
+      await queryClient.invalidateQueries({ queryKey: qk.notifications() });
     } catch (e) {
       notify.error(e);
     }
@@ -113,7 +113,7 @@ function NotificationsMenu() {
               key={n.id}
               onSelect={() => {
                 void markNotificationsRead([n.id])
-                  .then(() => queryClient.invalidateQueries({ queryKey: qk.notifications(clinicId) }))
+                  .then(() => queryClient.invalidateQueries({ queryKey: qk.notifications() }))
                   .catch((e: unknown) => notify.error(e));
                 if (n.link) navigate(n.link);
               }}
@@ -136,9 +136,10 @@ function NotificationsMenu() {
 function UserMenu() {
   const { t, locale, setLocale, bilingual, setBilingualChoice } = useI18n();
   const user = useCurrentUser();
-  const { roles, memberships, clinicId, switchClinic } = useClinic();
+  const { fullName, account, designation, designationLabel } = useAccess();
   const navigate = useNavigate();
-  const name = (user.user_metadata.full_name as string | undefined) || user.email || '';
+  const name = fullName || user.email || '';
+  const role = account === 'staff' ? (designation === 'other' && designationLabel ? designationLabel : t(`designation.${designation ?? 'other'}`)) : t(`account.${account}`);
 
   return (
     <DropdownMenu>
@@ -147,7 +148,7 @@ function UserMenu() {
           <Avatar name={name} size="sm" tone="gold" />
           <span className="hidden text-left leading-tight md:block">
             <span className="block max-w-[10rem] truncate text-sm font-medium">{name}</span>
-            <span className="block text-xs text-ink-muted">{roles.map((r) => t(`roles.${r}`)).join(' · ')}</span>
+            <span className="block text-xs text-ink-muted">{role}</span>
           </span>
         </button>
       </DropdownMenuTrigger>
@@ -167,17 +168,6 @@ function UserMenu() {
         <DropdownMenuItem icon={bilingual ? <Check /> : <Languages />} onSelect={() => setBilingualChoice(!bilingual)}>
           {t('common.bilingualLabels')}
         </DropdownMenuItem>
-        {memberships.length > 1 && (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuLabel>{t('common.switchClinic')}</DropdownMenuLabel>
-            {memberships.map((m) => (
-              <DropdownMenuItem key={m.clinic_id} icon={m.clinic_id === clinicId ? <Check /> : <Building2 />} onSelect={() => switchClinic(m.clinic_id)}>
-                {m.clinic?.name ?? "—"}
-              </DropdownMenuItem>
-            ))}
-          </>
-        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem icon={<LogOut />} onSelect={() => void signOut().then(() => navigate('/auth/sign-in'))}>
           {t('common.signOut')}
@@ -201,7 +191,7 @@ function EnvironmentBanner() {
 
 export function AppShell() {
   const { t } = useI18n();
-  const { clinic } = useClinic();
+  const { organization } = useAccess();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => {
@@ -276,8 +266,9 @@ export function AppShell() {
             <BrandMark className="size-7" />
           </Link>
           <div className="min-w-0 flex-1">
-            <p className="truncate font-display text-sm font-semibold text-ink sm:text-base">{clinic.name}</p>
+            <p className="truncate font-display text-sm font-semibold text-ink sm:text-base">{organization.name}</p>
           </div>
+          <BranchFilter className="hidden sm:block" />
           <NotificationsMenu />
           <UserMenu />
         </header>

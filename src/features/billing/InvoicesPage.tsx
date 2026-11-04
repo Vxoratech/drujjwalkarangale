@@ -8,7 +8,7 @@ import { buttonClasses } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { SearchInput, Select } from '@/components/ui/Input';
 import { PageHeader, Toolbar } from '@/components/ui/PageHeader';
-import { useClinic } from '@/features/clinic/ClinicProvider';
+import { useAccess } from '@/features/access/AccessProvider';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { formatDate, formatINR, fullName } from '@/lib/formatters';
 import { qk } from '@/lib/query/keys';
@@ -22,15 +22,15 @@ const PAGE_SIZE = 20;
 
 export function InvoicesPage() {
   const { t } = useI18n();
-  const { clinicId, can } = useClinic();
+  const { can, branchFilter } = useAccess();
   const navigate = useNavigate();
   const [status, setStatus] = useState<InvoiceStatus | 'outstanding' | ''>('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const debounced = useDebouncedValue(search);
 
-  const params: InvoiceListParams = { page, pageSize: PAGE_SIZE, status: status || undefined, search: debounced || undefined };
-  const query = useQuery({ queryKey: qk.invoices(clinicId, params), queryFn: () => listInvoices(clinicId, params), placeholderData: keepPreviousData });
+  const params: InvoiceListParams = { page, pageSize: PAGE_SIZE, status: status || undefined, search: debounced || undefined, branchId: branchFilter };
+  const query = useQuery({ queryKey: qk.invoices(params), queryFn: () => listInvoices(params), placeholderData: keepPreviousData });
 
   const columns: Column<Invoice>[] = [
     {

@@ -23,6 +23,16 @@ test.describe('sign-in', () => {
   });
 });
 
+test.describe('no public registration', () => {
+  test('there is no sign-up page or link: accounts come only from staff invitations', async ({ page }) => {
+    await page.goto('/auth/sign-in');
+    await expect(page.getByRole('link', { name: /create an account/i })).toHaveCount(0);
+    await expect(page.getByText(/Ask your administrator for an invitation/)).toBeVisible();
+    await page.goto('/auth/sign-up');
+    await expect(page).toHaveURL(/\/auth\/sign-in$/);
+  });
+});
+
 test.describe('Marathi', () => {
   test('switches the UI to Marathi and renders Devanagari with a capable font', async ({ page }) => {
     await page.goto('/auth/sign-in');

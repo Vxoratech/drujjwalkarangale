@@ -6,7 +6,7 @@ describe('consultation schema', () => {
 
   it('accepts a minimal consultation and converts blanks to null', () => {
     const v = consultationSchema.parse(base);
-    const { input, exam } = toConsultationPayload(v, { patient_id: 'p', doctor_id: 'd', appointment_id: null });
+    const { input, exam } = toConsultationPayload(v, { patient_id: 'p', branch_id: 'b', appointment_id: null });
     expect(input.pulse_bpm).toBeNull();
     expect(input.diagnosis).toBeNull();
     expect(exam.agni).toBeNull();

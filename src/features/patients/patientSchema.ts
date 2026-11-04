@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { optionalEmail, optionalPhone, optionalText, requiredText } from '@/lib/validation/schemas';
 import { todayISO } from '@/lib/formatters';
-import { BLOOD_GROUPS, PATIENT_STATUSES, PRAKRITIS, type Patient } from '@/types/domain';
+import { BLOOD_GROUPS, PATIENT_STATUSES, PRAKRITIS, type MedicalProfile, type Patient } from '@/types/domain';
 import type { PatientInput } from '@/services/patients';
 
 export const patientSchema = z.object({
@@ -17,13 +17,8 @@ export const patientSchema = z.object({
   email: optionalEmail,
   address_line: optionalText(240),
   city: optionalText(80),
-  blood_group: z.enum(BLOOD_GROUPS).optional().or(z.literal('')),
-  allergies: optionalText(1000),
-  chronic_conditions: optionalText(1000),
   emergency_contact_name: optionalText(120),
   emergency_contact_phone: optionalPhone,
-  prakriti: z.enum(PRAKRITIS).optional().or(z.literal('')),
-  assigned_doctor_id: z.string().uuid().optional().or(z.literal('')),
   preferred_locale: z.enum(['en', 'mr']),
   occupation: optionalText(120),
   approx_age_years: z
@@ -46,13 +41,8 @@ export function toFormValues(p?: Patient | null): PatientFormInput {
     email: p?.email ?? '',
     address_line: p?.address_line ?? '',
     city: p?.city ?? '',
-    blood_group: p?.blood_group ?? '',
-    allergies: p?.allergies ?? '',
-    chronic_conditions: p?.chronic_conditions ?? '',
     emergency_contact_name: p?.emergency_contact_name ?? '',
     emergency_contact_phone: p?.emergency_contact_phone ?? '',
-    prakriti: p?.prakriti ?? '',
-    assigned_doctor_id: p?.assigned_doctor_id ?? '',
     preferred_locale: p?.preferred_locale ?? 'en',
     occupation: p?.occupation ?? '',
     approx_age_years: p?.approx_age_years ?? '',
@@ -72,16 +62,28 @@ export function toPatientInput(v: PatientFormValues): PatientInput {
     email: blank(v.email),
     address_line: blank(v.address_line),
     city: blank(v.city),
-    blood_group: blank(v.blood_group),
-    allergies: blank(v.allergies),
-    chronic_conditions: blank(v.chronic_conditions),
     emergency_contact_name: blank(v.emergency_contact_name),
     emergency_contact_phone: blank(v.emergency_contact_phone),
-    prakriti: blank(v.prakriti),
-    assigned_doctor_id: blank(v.assigned_doctor_id),
     preferred_locale: v.preferred_locale,
     occupation: blank(v.occupation),
     approx_age_years: v.approx_age_years,
     status: v.status,
   };
+}
+
+/** Medical background (doctor-only form on the patient profile). */
+export const medicalSchema = z.object({
+  blood_group: z.enum(BLOOD_GROUPS).optional().or(z.literal('')),
+  allergies: optionalText(1000),
+  chronic_conditions: optionalText(1000),
+  prakriti: z.enum(PRAKRITIS).optional().or(z.literal('')),
+});
+export type MedicalFormValues = z.infer<typeof medicalSchema>;
+
+export function toMedicalForm(m?: MedicalProfile | null): MedicalFormValues {
+  return { blood_group: m?.blood_group ?? '', allergies: m?.allergies ?? '', chronic_conditions: m?.chronic_conditions ?? '', prakriti: m?.prakriti ?? '' };
+}
+
+export function toMedicalInput(v: MedicalFormValues): Omit<MedicalProfile, 'patient_id'> {
+  return { blood_group: blank(v.blood_group), allergies: blank(v.allergies), chronic_conditions: blank(v.chronic_conditions), prakriti: blank(v.prakriti) };
 }

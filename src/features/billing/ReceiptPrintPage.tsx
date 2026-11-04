@@ -4,7 +4,7 @@ import { useParams } from 'react-router-dom';
 import { ErrorState, FullPageSpinner } from '@/components/feedback/States';
 import { PrintableDocument } from '@/components/data-display/PrintableDocument';
 import { Button } from '@/components/ui/Button';
-import { useClinic } from '@/features/clinic/ClinicProvider';
+import { useAccess } from '@/features/access/AccessProvider';
 import { toUserMessage } from '@/lib/errors';
 import { formatDateTime, formatINR, fullName } from '@/lib/formatters';
 import { useI18n } from '@/locales/i18n';
@@ -13,8 +13,8 @@ import { getPayment } from '@/services/billing';
 export function ReceiptPrintPage() {
   const { paymentId = '' } = useParams();
   const { t } = useI18n();
-  const { clinicId, clinic } = useClinic();
-  const q = useQuery({ queryKey: [clinicId, 'payment', paymentId], queryFn: () => getPayment(clinicId, paymentId) });
+  const { organization } = useAccess();
+  const q = useQuery({ queryKey: ['payment', paymentId], queryFn: () => getPayment(paymentId) });
   if (q.isLoading) return <FullPageSpinner />;
   if (q.isError || !q.data) return <ErrorState message={toUserMessage(q.error)} />;
   const p = q.data;
@@ -25,7 +25,7 @@ export function ReceiptPrintPage() {
           {t('common.print')}
         </Button>
       </div>
-      <PrintableDocument clinic={clinic} title={t('billing.receipt')} meta={<span className="tabular">{p.receipt_no}</span>} footer={<p>{t('billing.thankYou')}</p>}>
+      <PrintableDocument organization={organization} title={t('billing.receipt')} meta={<span className="tabular">{p.receipt_no}</span>} footer={<p>{t('billing.thankYou')}</p>}>
         <dl className="grid max-w-md grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
           <dt className="text-ink-muted">{t('billing.patient')}</dt>
           <dd className="font-medium">

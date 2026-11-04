@@ -1,5 +1,5 @@
 import { translateCurrent, type TranslationKey } from '@/locales/i18n';
-import { Eye, FilePen, FilePlus2, FileSearch, FileX2, KeyRound } from 'lucide-react';
+import { Eye, FilePen, FilePlus2, FileSearch, FileX2, KeyRound, ShieldCheck } from 'lucide-react';
 import type { BadgeTone } from '@/components/ui/Badge';
 import type { AuditAction } from '@/types/domain';
 
@@ -10,6 +10,7 @@ export const AUDIT_ICONS: Record<AuditAction, typeof FilePen> = {
   view: Eye,
   access: FileSearch,
   security: KeyRound,
+  permission: ShieldCheck,
 };
 
 export const AUDIT_TONES: Record<AuditAction, BadgeTone> = {
@@ -19,8 +20,8 @@ export const AUDIT_TONES: Record<AuditAction, BadgeTone> = {
   view: 'neutral',
   access: 'gold',
   security: 'forest',
+  permission: 'warning',
 };
-
 
 /** Display name for an audited record type, from the dictionary with a readable fallback. */
 export function humanizeEntity(entity: string): string {

@@ -12,17 +12,16 @@ export type DateString = string;
 /** Integer amount in paise (1 INR = 100 paise). */
 export type Paise = number;
 
-export const APP_ROLES = ['super_admin', 'admin', 'doctor', 'receptionist', 'accountant', 'pharmacist', 'branch_manager'] as const;
-export type AppRole = (typeof APP_ROLES)[number];
-/** Roles that can be assigned from the UI today. Others are provisioned but not yet enabled. */
-export const ASSIGNABLE_ROLES = ['admin', 'doctor'] as const satisfies readonly AppRole[];
-export type AssignableRole = (typeof ASSIGNABLE_ROLES)[number];
-
-export type MemberStatus = 'active' | 'invited' | 'suspended';
+export type AccountType = 'primary_doctor' | 'admin' | 'staff';
+export const STAFF_DESIGNATIONS = ['receptionist', 'clinic_coordinator', 'accountant', 'billing_executive', 'assistant', 'branch_manager', 'other'] as const;
+export type StaffDesignation = (typeof STAFF_DESIGNATIONS)[number];
+export const EMPLOYMENT_TYPES = ['full_time', 'part_time', 'contract', 'visiting'] as const;
+export type EmploymentType = (typeof EMPLOYMENT_TYPES)[number];
+export type StaffStatus = 'invited' | 'active' | 'inactive';
 export type Locale = 'en' | 'mr';
-export type ClinicStatus = 'active' | 'suspended' | 'closed';
 
-export interface Clinic {
+/** The one clinic organization. */
+export interface Organization {
   id: UUID;
   name: string;
   legal_name: string | null;
@@ -35,56 +34,117 @@ export interface Clinic {
   gstin: string | null;
   registration_no: string | null;
   logo_path: string | null;
+  primary_doctor_id: UUID | null;
+}
+
+export interface OrganizationSettings {
+  organization_id: UUID;
   timezone: string;
   currency: string;
   default_locale: Locale;
   invoice_prefix: string;
   consultation_fee_paise: Paise;
-  status: ClinicStatus;
-  status_reason: string | null;
   brand_accent: string | null;
+  prescription_footer: string | null;
   audit_retention_days: number;
-  settings: ClinicSettings;
+  preferences: ClinicPreferences;
 }
 
 export interface Branch {
   id: UUID;
-  clinic_id: UUID;
+  code: string;
   name: string;
   address_line: string | null;
   city: string | null;
+  state: string | null;
+  pincode: string | null;
   phone: string | null;
+  email: string | null;
   is_primary: boolean;
   is_active: boolean;
+  manager_staff_id: UUID | null;
+}
+
+export interface WorkingHours {
+  weekday: number; // ISO: 1 = Monday
+  opens_at: string; // HH:MM
+  closes_at: string;
+  slot_minutes: number;
 }
 
 export interface Profile {
   id: UUID;
+  account_type: AccountType;
   full_name: string;
+  email: string | null;
   phone: string | null;
   preferred_locale: Locale;
   qualification: string | null;
   medical_registration_no: string | null;
-}
-
-export interface Membership {
-  id: UUID;
-  clinic_id: UUID;
-  user_id: UUID;
-  roles: AppRole[];
-  status: MemberStatus;
-  default_branch_id: UUID | null;
-  clinic: Pick<Clinic, 'id' | 'name' | 'city' | 'logo_path' | 'status' | 'status_reason'> | null;
+  is_active: boolean;
 }
 
 export interface StaffMember {
   id: UUID;
-  clinic_id: UUID;
-  user_id: UUID;
-  roles: AppRole[];
-  status: MemberStatus;
+  user_id: UUID | null;
+  full_name: string;
+  email: string;
+  mobile: string | null;
+  designation: StaffDesignation;
+  designation_label: string | null;
+  role_id: UUID;
+  employee_code: string | null;
+  employment_type: EmploymentType;
+  joined_on: DateString | null;
+  status: StaffStatus;
+  invited_at: Timestamp | null;
+  accepted_at: Timestamp | null;
+  deactivated_at: Timestamp | null;
+  deactivation_reason: string | null;
   created_at: Timestamp;
-  profile: Pick<Profile, 'full_name' | 'phone' | 'qualification'> | null;
+  branch_ids: UUID[];
+}
+
+export interface RoleTemplate {
+  id: UUID;
+  key: string;
+  name: string;
+  description: string | null;
+  scope: 'account' | 'staff';
+  is_system: boolean;
+  default_designation: StaffDesignation | null;
+  permissions: string[];
+}
+
+export interface PermissionDefinition {
+  key: string;
+  module: string;
+  action: string;
+  label: string;
+  description: string;
+  sensitivity: 'normal' | 'sensitive' | 'clinical';
+  doctor_only: boolean;
+  position: number;
+}
+
+export interface StaffPermissionRow {
+  permission_key: string;
+  in_template: boolean;
+  override: 'grant' | 'deny' | null;
+  effective: boolean;
+  grantable: boolean;
+}
+
+export interface DuplicateCandidate {
+  patient_id: UUID;
+  patient_code: string;
+  first_name: string;
+  last_name: string;
+  phone: string | null;
+  date_of_birth: DateString | null;
+  registered_branch: string | null;
+  match_reasons: ('phone' | 'name' | 'date_of_birth' | 'age')[];
+  score: number;
 }
 
 export type Gender = 'female' | 'male' | 'other' | 'undisclosed';
@@ -97,8 +157,7 @@ export type BloodGroup = (typeof BLOOD_GROUPS)[number];
 
 export interface Patient {
   id: UUID;
-  clinic_id: UUID;
-  branch_id: UUID | null;
+  registered_branch_id: UUID;
   patient_code: string;
   first_name: string;
   last_name: string;
@@ -108,19 +167,24 @@ export interface Patient {
   email: string | null;
   address_line: string | null;
   city: string | null;
-  blood_group: BloodGroup | null;
-  allergies: string | null;
-  chronic_conditions: string | null;
   emergency_contact_name: string | null;
   emergency_contact_phone: string | null;
-  prakriti: Prakriti | null;
-  assigned_doctor_id: UUID | null;
   preferred_locale: Locale;
   status: PatientStatus;
   occupation: string | null;
   approx_age_years: number | null;
   registered_on: DateString;
+  duplicate_reviewed: boolean;
   created_at: Timestamp;
+}
+
+/** Medical background, readable only with the medical-history permission. */
+export interface MedicalProfile {
+  patient_id: UUID;
+  blood_group: BloodGroup | null;
+  allergies: string | null;
+  chronic_conditions: string | null;
+  prakriti: Prakriti | null;
 }
 
 export const PATIENT_STATUSES = ['active', 'inactive', 'deceased'] as const;
@@ -153,10 +217,8 @@ export type AppointmentSource = (typeof APPOINTMENT_SOURCES)[number];
 
 export interface Appointment {
   id: UUID;
-  clinic_id: UUID;
-  branch_id: UUID | null;
+  branch_id: UUID;
   patient_id: UUID;
-  doctor_id: UUID;
   starts_at: Timestamp;
   ends_at: Timestamp;
   type: AppointmentType;
@@ -182,11 +244,9 @@ export type Bala = (typeof BALAS)[number];
 
 export interface Consultation {
   id: UUID;
-  clinic_id: UUID;
   patient_id: UUID;
-  doctor_id: UUID;
   appointment_id: UUID | null;
-  branch_id: UUID | null;
+  branch_id: UUID;
   status: RecordStatus;
   visit_date: DateString;
   chief_complaint: string;
@@ -215,7 +275,6 @@ export interface Consultation {
 
 export interface AyurvedicExamination {
   id: UUID;
-  clinic_id: UUID;
   consultation_id: UUID;
   patient_id: UUID;
   prakriti: Prakriti | null;
@@ -258,7 +317,6 @@ export type AmaLevel = (typeof AMA_LEVELS)[number];
 
 export interface ExamFieldDefinition {
   id: UUID;
-  clinic_id: UUID;
   key: string;
   label_en: string;
   label_mr: string | null;
@@ -272,11 +330,10 @@ export interface ExamFieldDefinition {
 export type FollowUpStatus = 'pending' | 'booked' | 'completed' | 'cancelled';
 export interface FollowUp {
   id: UUID;
-  clinic_id: UUID;
   patient_id: UUID;
-  doctor_id: UUID;
   consultation_id: UUID | null;
   appointment_id: UUID | null;
+  branch_id: UUID;
   due_date: DateString;
   reason: string | null;
   status: FollowUpStatus;
@@ -310,10 +367,9 @@ export interface PrescriptionItem {
 
 export interface Prescription {
   id: UUID;
-  clinic_id: UUID;
   patient_id: UUID;
-  doctor_id: UUID;
   consultation_id: UUID | null;
+  branch_id: UUID;
   prescription_no: string | null;
   status: PrescriptionStatus;
   notes: string | null;
@@ -339,13 +395,10 @@ export interface PrescriptionRevision {
 
 export interface PrescriptionTemplate {
   id: UUID;
-  clinic_id: UUID;
-  owner_id: UUID;
   name: string;
   description: string | null;
   items: Partial<PrescriptionItem>[];
   patient_instructions: string | null;
-  is_shared: boolean;
   is_active: boolean;
 }
 
@@ -354,9 +407,9 @@ export type InvestigationCategory = 'laboratory' | 'imaging' | 'other';
 
 export interface Investigation {
   id: UUID;
-  clinic_id: UUID;
   patient_id: UUID;
   consultation_id: UUID | null;
+  branch_id: UUID;
   ordered_by: UUID;
   test_name: string;
   category: InvestigationCategory;
@@ -374,10 +427,10 @@ export const DOCUMENT_CATEGORIES = ['lab_report', 'imaging', 'external_prescript
 export type DocumentCategory = (typeof DOCUMENT_CATEGORIES)[number];
 export interface PatientDocument {
   id: UUID;
-  clinic_id: UUID;
   patient_id: UUID;
   investigation_id: UUID | null;
   consultation_id: UUID | null;
+  branch_id: UUID;
   category: DocumentCategory;
   title: string;
   file_name: string;
@@ -436,16 +489,7 @@ export interface ConsultationAmendment {
   created_at: Timestamp;
 }
 
-export interface AccessReview {
-  id: UUID;
-  reviewer_id: UUID;
-  member_count: number;
-  changes_made: boolean;
-  notes: string | null;
-  reviewed_at: Timestamp;
-}
-
-export interface ClinicSettings {
+export interface ClinicPreferences {
   bilingual_labels?: boolean;
   default_appointment_minutes?: number;
   prescription_language?: 'patient' | 'en' | 'mr';
@@ -458,20 +502,24 @@ export interface ClinicSettings {
 export const CONSULTATION_SECTIONS = ['pain', 'family_history', 'menstrual_history', 'dinacharya', 'general_examination', 'dosha_assessment', 'clinic_fields'] as const;
 export type ConsultationSection = (typeof CONSULTATION_SECTIONS)[number];
 
-export interface ClinicOverview {
-  patients_total: number;
-  patients_new: number;
-  appointments_today: number;
-  appointments_in_range: number;
-  appointments_no_show: number;
-  consultations_completed: number;
-  consultations_open: number;
-  follow_ups_pending: number;
-  follow_ups_overdue: number;
-  collected_paise: Paise;
-  refunded_paise: Paise;
-  outstanding_paise: Paise;
-  unreconciled_payments: number;
+/** Dashboard overview; a section is absent when the caller lacks the matching report permission. */
+export interface OrgOverview {
+  patients_total?: number;
+  patients_new?: number;
+  branches_active?: number;
+  appointments_today?: number;
+  appointments_remaining_today?: number;
+  appointments_in_range?: number;
+  appointments_no_show?: number;
+  consultations_completed?: number;
+  consultations_open?: number;
+  follow_ups_pending?: number;
+  follow_ups_overdue?: number;
+  collected_paise?: Paise;
+  refunded_paise?: Paise;
+  outstanding_paise?: Paise;
+  outstanding_invoices?: number;
+  unreconciled_payments?: number;
 }
 
 export interface TrendRow {
@@ -480,19 +528,44 @@ export interface TrendRow {
   appointments: number;
   appointments_completed: number;
   consultations_completed: number;
-  collected_paise: Paise;
+  collected_paise: Paise | null;
 }
 
 export interface BranchMetric {
   branch_id: UUID;
   branch_name: string;
+  is_active: boolean;
+  patients_registered: number;
   appointments: number;
   appointments_completed: number;
   no_shows: number;
   consultations_completed: number;
-  invoiced_paise: Paise;
-  collected_paise: Paise;
-  outstanding_paise: Paise;
+  invoiced_paise: Paise | null;
+  collected_paise: Paise | null;
+  outstanding_paise: Paise | null;
+}
+
+export interface StaffActivity {
+  staff_id: UUID;
+  full_name: string;
+  designation: StaffDesignation;
+  status: StaffStatus;
+  event_count: number;
+  last_activity_at: Timestamp | null;
+}
+
+export interface NextPatient {
+  appointment_id: UUID;
+  patient_id: UUID;
+  patient_code: string;
+  first_name: string;
+  last_name: string;
+  starts_at: Timestamp;
+  status: AppointmentStatus;
+  branch_id: UUID;
+  branch_name: string;
+  type: AppointmentType;
+  reason: string | null;
 }
 
 export interface DoctorOverview {
@@ -502,6 +575,21 @@ export interface DoctorOverview {
   completed_today: number;
   completed_this_month: number;
   follow_ups_due: number;
+  pending_prescriptions: number;
+  pending_results: number;
+  next_patient: NextPatient | null;
+  branch_schedule: { branch_id: UUID; branch_name: string; appointments: number; remaining: number; first_at: Timestamp | null }[];
+}
+
+export interface ClinicalReport {
+  consultations_finalized: number;
+  new_patients_seen: number;
+  prescriptions_issued: number;
+  prescriptions_revised: number;
+  investigations_ordered: number;
+  investigations_resulted: number;
+  follow_ups_created: number;
+  by_branch: { branch_id: UUID; branch_name: string; consultations: number }[];
 }
 
 export interface RecentPatient {
@@ -526,7 +614,7 @@ export interface Refund {
 
 export interface Invoice {
   id: UUID;
-  clinic_id: UUID;
+  branch_id: UUID;
   patient_id: UUID;
   appointment_id: UUID | null;
   invoice_no: string;
@@ -550,61 +638,28 @@ export interface InvoiceDetail extends Invoice {
   refunds: Refund[];
 }
 
-export type AuditAction = 'insert' | 'update' | 'delete' | 'view' | 'access' | 'security';
+export type AuditAction = 'insert' | 'update' | 'delete' | 'view' | 'access' | 'security' | 'permission';
 export interface AuditEvent {
   id: number;
-  clinic_id: UUID | null;
   actor_id: UUID | null;
-  actor_type: 'user' | 'platform' | 'system';
+  actor_type: 'user' | 'system';
   action: AuditAction;
   event_type: string;
   entity_type: string;
   entity_id: UUID | null;
+  branch_id: UUID | null;
   changed_fields: string[];
   metadata: Record<string, unknown>;
   created_at: Timestamp;
 }
 
-export interface SubscriptionPlan {
-  id: UUID;
-  code: string;
-  name: string;
-  price_paise: Paise;
-  billing_interval: 'monthly' | 'yearly';
-  limits: { max_doctors?: number; max_branches?: number; max_staff?: number };
-}
-
-export interface TenantSubscription {
-  id: UUID;
-  clinic_id: UUID;
-  status: 'trialing' | 'active' | 'past_due' | 'cancelled' | 'expired';
-  billing_interval: 'monthly' | 'yearly';
-  trial_ends_at: Timestamp | null;
-  current_period_end: Timestamp | null;
-  provider: 'manual' | 'razorpay' | 'stripe';
-  plan: SubscriptionPlan | null;
-}
-
 export interface AppNotification {
   id: UUID;
-  clinic_id: UUID;
-  kind: 'appointment_booked' | 'appointment_cancelled' | 'investigation_resulted' | 'system';
+  kind: 'appointment_booked' | 'appointment_cancelled' | 'investigation_resulted' | 'staff_invited' | 'system';
   title: string;
   link: string | null;
   read_at: Timestamp | null;
   created_at: Timestamp;
-}
-
-export interface DashboardSummary {
-  appointments_today: number;
-  appointments_remaining_today: number;
-  patients_total: number;
-  patients_new_this_month: number;
-  collected_this_month_paise: Paise;
-  outstanding_paise: Paise;
-  draft_consultations: number;
-  follow_ups_next_7_days: number;
-  pending_investigations: number;
 }
 
 export interface RevenueRow {

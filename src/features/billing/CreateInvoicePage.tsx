@@ -2,6 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2 } from 'lucide-react';
 import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form';
+import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Alert } from '@/components/feedback/States';
 import { notify } from '@/components/feedback/toast';
@@ -10,7 +11,8 @@ import { Button, IconButton } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { Input, Select, Textarea } from '@/components/ui/Input';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { useClinic } from '@/features/clinic/ClinicProvider';
+import { BranchSelect } from '@/components/ui/BranchFilter';
+import { useAccess } from '@/features/access/AccessProvider';
 import { PatientPicker } from '@/features/patients/PatientPicker';
 import { formatINR, paiseToRupees, rupeesToPaise } from '@/lib/formatters';
 import { useFieldError } from '@/lib/validation/useFieldError';
@@ -22,8 +24,10 @@ import { invoiceSchema, type InvoiceFormInput, type InvoiceFormValues } from './
 
 export function CreateInvoicePage() {
   const { t } = useI18n();
-  const { clinicId, clinic } = useClinic();
+  const { settings, defaultBranchId, branches } = useAccess();
   const [search] = useSearchParams();
+  const appointmentId = search.get('appointment');
+  const [branchId, setBranchId] = useState(defaultBranchId ?? '');
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const fieldError = useFieldError();
@@ -34,7 +38,7 @@ export function CreateInvoicePage() {
     resolver: zodResolver(invoiceSchema),
     defaultValues: {
       patient_id: search.get('patient') ?? '',
-      items: [{ description: 'Consultation', item_type: 'consultation', quantity: '1', unit_price: clinic.consultation_fee_paise ? String(paiseToRupees(clinic.consultation_fee_paise)) : '', tax_rate: '0' }],
+      items: [{ description: 'Consultation', item_type: 'consultation', quantity: '1', unit_price: settings.consultation_fee_paise ? String(paiseToRupees(settings.consultation_fee_paise)) : '', tax_rate: '0' }],
       discount: '',
       notes: '',
     },
@@ -50,18 +54,20 @@ export function CreateInvoicePage() {
 
   const mutation = useMutation({
     mutationFn: (v: InvoiceFormValues) =>
-      createInvoice(clinicId, {
+      createInvoice({
         patientId: v.patient_id,
         discountPaise: v.discount,
         notes: v.notes || null,
-        appointmentId: search.get('appointment'),
+        appointmentId,
+        // An invoice for an appointment belongs to that visit's branch.
+        branchId: appointmentId ? null : branchId || null,
         idempotencyKey: idem.key,
         items: v.items.map((i) => ({ description: i.description, item_type: i.item_type, quantity: i.quantity, unit_price_paise: i.unit_price, tax_rate: i.tax_rate })),
       }),
     onSuccess: async (invoice) => {
       notify.success(t('billing.created'));
-      await queryClient.invalidateQueries({ queryKey: [clinicId, 'invoices'] });
-      await queryClient.invalidateQueries({ queryKey: [clinicId, 'dashboard'] });
+      await queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      await queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       navigate(`/billing/${invoice.id}`, { replace: true });
     },
     onError: (err) => notify.error(err),
@@ -78,6 +84,11 @@ export function CreateInvoicePage() {
                 <FormField label={t('billing.patient')} error={e.patient_id ? t('validation.required') : undefined} required>
                   <Controller control={form.control} name="patient_id" render={({ field }) => <PatientPicker value={field.value || null} onChange={(id) => field.onChange(id ?? '')} />} />
                 </FormField>
+                {!appointmentId && branches.length > 1 && (
+                  <FormField label={t('appointments.branch')}>
+                    <BranchSelect value={branchId} onChange={setBranchId} />
+                  </FormField>
+                )}
               </CardBody>
             </Card>
             <Card>

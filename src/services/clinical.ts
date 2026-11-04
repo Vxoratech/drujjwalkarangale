@@ -21,22 +21,22 @@ import { unwrap } from './_helpers';
 
 export type ConsultationSummary = Pick<
   Consultation,
-  'id' | 'patient_id' | 'doctor_id' | 'status' | 'visit_date' | 'chief_complaint' | 'diagnosis' | 'ayurvedic_diagnosis' | 'follow_up_date'
+  'id' | 'patient_id' | 'branch_id' | 'status' | 'visit_date' | 'chief_complaint' | 'diagnosis' | 'ayurvedic_diagnosis' | 'follow_up_date'
 > & {
   patient?: { first_name: string; last_name: string; patient_code: string } | null;
   exam?: Pick<AyurvedicExamination, 'prakriti' | 'vikriti' | 'agni' | 'ama' | 'nadi'>[] | Pick<AyurvedicExamination, 'prakriti' | 'vikriti' | 'agni' | 'ama' | 'nadi'> | null;
   amendments?: { id: UUID }[];
 };
 
-const SUMMARY = 'id, patient_id, doctor_id, status, visit_date, chief_complaint, diagnosis, ayurvedic_diagnosis, follow_up_date';
+const SUMMARY = 'id, patient_id, branch_id, status, visit_date, chief_complaint, diagnosis, ayurvedic_diagnosis, follow_up_date';
 
-export async function listConsultations(clinicId: UUID, params: { patientId?: UUID; doctorId?: UUID; status?: 'draft' | 'finalized'; limit?: number }): Promise<ConsultationSummary[]> {
+export async function listConsultations(params: { patientId?: UUID; branchId?: UUID | null; status?: 'draft' | 'finalized'; limit?: number }): Promise<ConsultationSummary[]> {
   let q = getSupabase()
     .from('consultations')
     .select(`${SUMMARY}, patient:patients(first_name, last_name, patient_code), exam:ayurvedic_examinations(prakriti, vikriti, agni, ama, nadi), amendments:consultation_amendments(id)`)
-    .eq('clinic_id', clinicId);
+    ;
   if (params.patientId) q = q.eq('patient_id', params.patientId);
-  if (params.doctorId) q = q.eq('doctor_id', params.doctorId);
+  if (params.branchId) q = q.eq('branch_id', params.branchId);
   if (params.status) q = q.eq('status', params.status);
   return unwrap<ConsultationSummary[]>(await q.order('visit_date', { ascending: false }).order('created_at', { ascending: false }).limit(params.limit ?? 50));
 }
@@ -46,24 +46,24 @@ export interface ConsultationBundle {
   examination: AyurvedicExamination | null;
 }
 
-export async function getConsultation(clinicId: UUID, id: UUID): Promise<ConsultationBundle> {
-  const consultation = unwrap<Consultation>(await getSupabase().from('consultations').select('*').eq('clinic_id', clinicId).eq('id', id).single());
+export async function getConsultation(id: UUID): Promise<ConsultationBundle> {
+  const consultation = unwrap<Consultation>(await getSupabase().from('consultations').select('*').eq('id', id).single());
   const examination = unwrap<AyurvedicExamination | null>(await getSupabase().from('ayurvedic_examinations').select('*').eq('consultation_id', id).maybeSingle());
   return { consultation, examination };
 }
 
-export async function findConsultationForAppointment(clinicId: UUID, appointmentId: UUID): Promise<UUID | null> {
-  const row = unwrap<{ id: UUID } | null>(await getSupabase().from('consultations').select('id').eq('clinic_id', clinicId).eq('appointment_id', appointmentId).maybeSingle());
+export async function findConsultationForAppointment(appointmentId: UUID): Promise<UUID | null> {
+  const row = unwrap<{ id: UUID } | null>(await getSupabase().from('consultations').select('id').eq('appointment_id', appointmentId).maybeSingle());
   return row?.id ?? null;
 }
 
-export type ConsultationInput = Omit<Consultation, 'id' | 'clinic_id' | 'status' | 'finalized_at' | 'created_at' | 'visit_date' | 'branch_id'>;
-export type ExaminationInput = Omit<AyurvedicExamination, 'id' | 'clinic_id' | 'consultation_id' | 'patient_id'>;
+export type ConsultationInput = Omit<Consultation, 'id' | 'status' | 'finalized_at' | 'created_at' | 'visit_date'>;
+export type ExaminationInput = Omit<AyurvedicExamination, 'id' | 'consultation_id' | 'patient_id'>;
 
 /** Save consultation + examination atomically (public.save_consultation, RLS-enforced). */
-export async function saveConsultation(clinicId: UUID, input: ConsultationInput, exam: ExaminationInput, id?: UUID): Promise<UUID> {
+export async function saveConsultation(input: ConsultationInput, exam: ExaminationInput, id?: UUID): Promise<UUID> {
   return unwrap<UUID>(
-    await getSupabase().rpc('save_consultation', { p_clinic: clinicId, p_id: id ?? null, p_data: input, p_exam: exam }),
+    await getSupabase().rpc('save_consultation', { p_id: id ?? null, p_data: input, p_exam: exam }),
   );
 }
 
@@ -79,15 +79,15 @@ function sortItems(rx: Prescription): Prescription {
   return { ...rx, items: [...(rx.items ?? [])].sort((a, b) => a.position - b.position) };
 }
 
-export async function listPrescriptions(clinicId: UUID, params: { patientId?: UUID; consultationId?: UUID }): Promise<Prescription[]> {
-  let q = getSupabase().from('prescriptions').select(RX_COLUMNS).eq('clinic_id', clinicId);
+export async function listPrescriptions(params: { patientId?: UUID; consultationId?: UUID }): Promise<Prescription[]> {
+  let q = getSupabase().from('prescriptions').select(RX_COLUMNS);
   if (params.patientId) q = q.eq('patient_id', params.patientId);
   if (params.consultationId) q = q.eq('consultation_id', params.consultationId);
   return unwrap<Prescription[]>(await q.order('created_at', { ascending: false })).map(sortItems);
 }
 
-export async function getPrescription(clinicId: UUID, id: UUID): Promise<Prescription> {
-  return sortItems(unwrap<Prescription>(await getSupabase().from('prescriptions').select(RX_COLUMNS).eq('clinic_id', clinicId).eq('id', id).single()));
+export async function getPrescription(id: UUID): Promise<Prescription> {
+  return sortItems(unwrap<Prescription>(await getSupabase().from('prescriptions').select(RX_COLUMNS).eq('id', id).single()));
 }
 
 export type PrescriptionItemInput = Omit<PrescriptionItem, 'id' | 'prescription_id' | 'position'>;
@@ -101,14 +101,12 @@ export interface PrescriptionHeaderInput {
 
 /** Save a draft prescription and replace its items in one transaction (public.save_prescription_draft). */
 export async function savePrescriptionDraft(
-  clinicId: UUID,
-  input: { patient_id: UUID; consultation_id: UUID | null; header: PrescriptionHeaderInput },
+  input: { patient_id: UUID; consultation_id: UUID | null; header: PrescriptionHeaderInput & { branch_id?: UUID | null } },
   items: PrescriptionItemInput[],
   id?: UUID,
 ): Promise<UUID> {
   return unwrap<UUID>(
     await getSupabase().rpc('save_prescription_draft', {
-      p_clinic: clinicId,
       p_id: id ?? null,
       p_patient: input.patient_id,
       p_consultation: input.consultation_id,
@@ -132,22 +130,22 @@ export interface PrescriptionSearchParams {
   page: number;
   pageSize: number;
   status?: 'issued' | 'draft' | 'cancelled';
-  doctorId?: UUID;
+  branchId?: UUID | null;
   from?: string;
   to?: string;
   /** Prescription number, patient name or patient ID. */
   search?: string;
 }
 
-/** Clinic-wide prescription search (RLS limits admins to issued/cancelled prescriptions). */
-export async function searchPrescriptions(clinicId: UUID, params: PrescriptionSearchParams): Promise<{ rows: PrescriptionListItem[]; total: number }> {
+/** Prescription search (RLS hides drafts from everyone but the doctor, and limits staff to their branches). */
+export async function searchPrescriptions(params: PrescriptionSearchParams): Promise<{ rows: PrescriptionListItem[]; total: number }> {
   const db = getSupabase();
   let q = db
     .from('prescriptions')
-    .select('id, clinic_id, patient_id, doctor_id, consultation_id, prescription_no, status, language, revision_number, issued_at, created_at, items:prescription_items(medicine_name), patient:patients!inner(id, first_name, last_name, patient_code)', { count: 'exact' })
-    .eq('clinic_id', clinicId);
+    .select('id, patient_id, branch_id, consultation_id, prescription_no, status, language, revision_number, issued_at, created_at, items:prescription_items(medicine_name), patient:patients!inner(id, first_name, last_name, patient_code)', { count: 'exact' })
+    ;
   if (params.status) q = q.eq('status', params.status);
-  if (params.doctorId) q = q.eq('doctor_id', params.doctorId);
+  if (params.branchId) q = q.eq('branch_id', params.branchId);
   if (params.from) q = q.gte('created_at', params.from);
   if (params.to) q = q.lt('created_at', params.to);
   const term = params.search?.trim().replace(/[%_,().*\\]/g, '');
@@ -165,11 +163,11 @@ export async function listAmendments(consultationId: UUID): Promise<Consultation
   return unwrap<ConsultationAmendment[]>(await getSupabase().from('consultation_amendments').select('*').eq('consultation_id', consultationId).order('created_at'));
 }
 
-export async function addAmendment(clinicId: UUID, input: { consultationId: UUID; reason: string; content: string }): Promise<void> {
+export async function addAmendment(input: { consultationId: UUID; reason: string; content: string }): Promise<void> {
   unwrap(
     await getSupabase()
       .from('consultation_amendments')
-      .insert({ clinic_id: clinicId, consultation_id: input.consultationId, reason: input.reason, content: input.content })
+      .insert({ consultation_id: input.consultationId, reason: input.reason, content: input.content })
       .select('id')
       .single(),
   );
@@ -186,53 +184,61 @@ export async function listPrescriptionRevisions(prescriptionId: UUID): Promise<P
   );
 }
 
-export async function listTemplates(clinicId: UUID): Promise<PrescriptionTemplate[]> {
-  return unwrap<PrescriptionTemplate[]>(await getSupabase().from('prescription_templates').select('*').eq('clinic_id', clinicId).eq('is_active', true).order('name'));
+export async function listTemplates(): Promise<PrescriptionTemplate[]> {
+  return unwrap<PrescriptionTemplate[]>(await getSupabase().from('prescription_templates').select('*').eq('is_active', true).order('name'));
 }
 
-export async function saveTemplate(clinicId: UUID, input: { name: string; items: PrescriptionItemInput[]; patient_instructions: string | null; is_shared: boolean }): Promise<void> {
-  unwrap(await getSupabase().from('prescription_templates').insert({ ...input, clinic_id: clinicId }).select('id').single());
+export async function saveTemplate(input: { name: string; items: PrescriptionItemInput[]; patient_instructions: string | null }): Promise<void> {
+  unwrap(await getSupabase().from('prescription_templates').insert(input).select('id').single());
 }
 
-export async function cancelPrescription(clinicId: UUID, id: UUID): Promise<void> {
-  unwrap(await getSupabase().from('prescriptions').update({ status: 'cancelled' }).eq('clinic_id', clinicId).eq('id', id).select('id').single());
+export async function cancelPrescription(id: UUID): Promise<void> {
+  unwrap(await getSupabase().from('prescriptions').update({ status: 'cancelled' }).eq('id', id).select('id').single());
 }
 
 // ---------------------------------------------------------------- investigations
 
-export async function listInvestigations(clinicId: UUID, params: { patientId?: UUID; open?: boolean }): Promise<Investigation[]> {
-  let q = getSupabase().from('investigations').select('*').eq('clinic_id', clinicId);
+export async function listInvestigations(params: { patientId?: UUID; open?: boolean }): Promise<Investigation[]> {
+  let q = getSupabase().from('investigations').select('*');
   if (params.patientId) q = q.eq('patient_id', params.patientId);
   if (params.open) q = q.in('status', ['ordered', 'sample_collected']);
   return unwrap<Investigation[]>(await q.order('ordered_at', { ascending: false }).limit(100));
 }
 
+export type OpenInvestigation = Investigation & { patient: { id: UUID; first_name: string; last_name: string; patient_code: string } | null };
+
+/** Ordered or in-progress investigations at the user's branches (RLS), newest first. */
+export async function listOpenInvestigations(branchId: UUID | null): Promise<OpenInvestigation[]> {
+  let q = getSupabase().from('investigations').select('*, patient:patients(id, first_name, last_name, patient_code)').in('status', ['ordered', 'sample_collected']);
+  if (branchId) q = q.eq('branch_id', branchId);
+  return unwrap<OpenInvestigation[]>(await q.order('ordered_at', { ascending: false }).limit(200));
+}
+
 export async function orderInvestigation(
-  clinicId: UUID,
-  input: Pick<Investigation, 'patient_id' | 'consultation_id' | 'test_name' | 'category' | 'instructions' | 'ordered_by'>,
+  input: Pick<Investigation, 'patient_id' | 'consultation_id' | 'test_name' | 'category' | 'instructions' | 'ordered_by'> & { branch_id?: UUID | null },
 ): Promise<Investigation> {
-  return unwrap<Investigation>(await getSupabase().from('investigations').insert({ ...input, clinic_id: clinicId }).select('*').single());
+  return unwrap<Investigation>(await getSupabase().from('investigations').insert(input).select('*').single());
 }
 
 export async function updateInvestigation(
-  clinicId: UUID,
   id: UUID,
-  input: { status: InvestigationStatus; result_summary: string | null; notes?: string | null },
+  // Staff who only track investigations send the status alone; results are the doctor's.
+  input: { status: InvestigationStatus; result_summary?: string | null; notes?: string | null },
 ): Promise<Investigation> {
-  return unwrap<Investigation>(await getSupabase().from('investigations').update(input).eq('clinic_id', clinicId).eq('id', id).select('*').single());
+  return unwrap<Investigation>(await getSupabase().from('investigations').update(input).eq('id', id).select('*').single());
 }
 
 // ---------------------------------------------------------------- examination fields
 
-export async function listExamFields(clinicId: UUID, opts: { includeInactive?: boolean } = {}): Promise<ExamFieldDefinition[]> {
-  let q = getSupabase().from('exam_field_definitions').select('*').eq('clinic_id', clinicId);
+export async function listExamFields(opts: { includeInactive?: boolean } = {}): Promise<ExamFieldDefinition[]> {
+  let q = getSupabase().from('exam_field_definitions').select('*');
   if (!opts.includeInactive) q = q.eq('is_active', true);
   return unwrap<ExamFieldDefinition[]>(await q.order('position').order('label_en'));
 }
 
 export type ExamFieldInput = Pick<ExamFieldDefinition, 'key' | 'label_en' | 'label_mr' | 'field_type' | 'options' | 'unit' | 'position' | 'is_active'>;
 
-export async function saveExamField(clinicId: UUID, input: ExamFieldInput, id?: UUID): Promise<void> {
+export async function saveExamField(input: ExamFieldInput, id?: UUID): Promise<void> {
   const db = getSupabase().from('exam_field_definitions');
   // The key is the stable identifier for stored values, so it is fixed after creation.
   const editable: Omit<ExamFieldInput, 'key'> = {
@@ -244,24 +250,24 @@ export async function saveExamField(clinicId: UUID, input: ExamFieldInput, id?: 
     position: input.position,
     is_active: input.is_active,
   };
-  const q = id ? db.update(editable).eq('id', id).eq('clinic_id', clinicId) : db.insert({ ...input, clinic_id: clinicId });
+  const q = id ? db.update(editable).eq('id', id) : db.insert(input);
   unwrap(await q.select('id').single());
 }
 
 // ---------------------------------------------------------------- follow-ups
 
-export async function listFollowUps(clinicId: UUID, params: { status?: 'pending'; dueBefore?: string; doctorId?: UUID; patientId?: UUID }): Promise<FollowUp[]> {
-  let q = getSupabase().from('follow_ups').select('*, patient:patients(id, first_name, last_name, patient_code, phone)').eq('clinic_id', clinicId);
+export async function listFollowUps(params: { status?: 'pending'; dueBefore?: string; branchId?: UUID | null; patientId?: UUID }): Promise<FollowUp[]> {
+  let q = getSupabase().from('follow_ups').select('*, patient:patients(id, first_name, last_name, patient_code, phone)');
   if (params.status) q = q.eq('status', params.status);
   if (params.dueBefore) q = q.lte('due_date', params.dueBefore);
-  if (params.doctorId) q = q.eq('doctor_id', params.doctorId);
+  if (params.branchId) q = q.eq('branch_id', params.branchId);
   if (params.patientId) q = q.eq('patient_id', params.patientId);
   return unwrap<FollowUp[]>(await q.order('due_date').limit(100));
 }
 
 /** Book an appointment for a follow-up; both rows are written in one transaction. */
-export async function bookFollowUp(input: { followUpId: UUID; startsAt: Timestamp; endsAt: Timestamp; reason: string | null }): Promise<UUID> {
+export async function bookFollowUp(input: { followUpId: UUID; startsAt: Timestamp; endsAt: Timestamp; reason: string | null; branchId?: UUID | null }): Promise<UUID> {
   return unwrap<UUID>(
-    await getSupabase().rpc('book_follow_up', { p_follow_up: input.followUpId, p_starts_at: input.startsAt, p_ends_at: input.endsAt, p_reason: input.reason }),
+    await getSupabase().rpc('book_follow_up', { p_follow_up: input.followUpId, p_starts_at: input.startsAt, p_ends_at: input.endsAt, p_branch: input.branchId ?? null, p_reason: input.reason }),
   );
 }

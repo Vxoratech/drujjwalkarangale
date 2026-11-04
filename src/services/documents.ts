@@ -3,8 +3,8 @@ import { getSupabase, STORAGE_BUCKET } from '@/lib/supabase/client';
 import type { DocumentCategory, PatientDocument, UUID } from '@/types/domain';
 import { unwrap } from './_helpers';
 
-export async function listDocuments(clinicId: UUID, params: { patientId: UUID; investigationId?: UUID }): Promise<PatientDocument[]> {
-  let q = getSupabase().from('patient_documents').select('*').eq('clinic_id', clinicId).eq('patient_id', params.patientId).not('uploaded_at', 'is', null);
+export async function listDocuments(params: { patientId: UUID; investigationId?: UUID }): Promise<PatientDocument[]> {
+  let q = getSupabase().from('patient_documents').select('*').eq('patient_id', params.patientId).not('uploaded_at', 'is', null);
   if (params.investigationId) q = q.eq('investigation_id', params.investigationId);
   return unwrap<PatientDocument[]>(await q.order('created_at', { ascending: false }));
 }
@@ -67,8 +67,7 @@ async function putObject(path: string, file: File, onProgress?: (fraction: numbe
  * If step 2 fails the unconfirmed row is invisible and is purged after 24 h.
  */
 export async function uploadDocument(
-  clinicId: UUID,
-  input: { patientId: UUID; file: File; title: string; category: DocumentCategory; investigationId?: UUID | null; consultationId?: UUID | null },
+  input: { patientId: UUID; branchId: UUID | null; file: File; title: string; category: DocumentCategory; investigationId?: UUID | null; consultationId?: UUID | null },
   onProgress?: (fraction: number) => void,
 ): Promise<PatientDocument> {
   const problem = validateDocumentFile(input.file);
@@ -78,8 +77,9 @@ export async function uploadDocument(
     await db
       .from('patient_documents')
       .insert({
-        clinic_id: clinicId,
         patient_id: input.patientId,
+        // Omitted branch: the server takes the consultation's branch, else the primary one.
+        ...(input.branchId ? { branch_id: input.branchId } : {}),
         investigation_id: input.investigationId ?? null,
         consultation_id: input.consultationId ?? null,
         category: input.category,

@@ -12,7 +12,6 @@ import { Button, IconButton } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { Modal } from '@/components/ui/Dialog';
 import { Checkbox, Input, Select, Textarea } from '@/components/ui/Input';
-import { useClinic } from '@/features/clinic/ClinicProvider';
 import { useFieldError } from '@/lib/validation/useFieldError';
 import { useI18n } from '@/locales/i18n';
 import { listExamFields, saveExamField } from '@/services/clinical';
@@ -39,7 +38,7 @@ type Output = z.output<typeof examFieldSchema>;
 
 function FieldModal({ field, open, onOpenChange }: { field: ExamFieldDefinition | null; open: boolean; onOpenChange: (o: boolean) => void }) {
   const { t } = useI18n();
-  const { clinicId } = useClinic();
+  
   const queryClient = useQueryClient();
   const fieldError = useFieldError();
   const form = useForm<Input_, unknown, Output>({ resolver: zodResolver(examFieldSchema) });
@@ -60,7 +59,6 @@ function FieldModal({ field, open, onOpenChange }: { field: ExamFieldDefinition 
   const mutation = useMutation({
     mutationFn: (v: Output) =>
       saveExamField(
-        clinicId,
         {
           key: v.key,
           label_en: v.label_en,
@@ -75,7 +73,7 @@ function FieldModal({ field, open, onOpenChange }: { field: ExamFieldDefinition 
       ),
     onSuccess: async () => {
       notify.success(t('settings.fieldSaved'));
-      await queryClient.invalidateQueries({ queryKey: [clinicId, 'exam-fields'] });
+      await queryClient.invalidateQueries({ queryKey: ['exam-fields'] });
       onOpenChange(false);
     },
     onError: (e) => notify.error(e),
@@ -131,9 +129,9 @@ function FieldModal({ field, open, onOpenChange }: { field: ExamFieldDefinition 
 
 export function ExamFieldsCard() {
   const { t } = useI18n();
-  const { clinicId } = useClinic();
+  
   const [modal, setModal] = useState<{ open: boolean; field: ExamFieldDefinition | null }>({ open: false, field: null });
-  const query = useQuery({ queryKey: [clinicId, 'exam-fields', 'all'], queryFn: () => listExamFields(clinicId, { includeInactive: true }) });
+  const query = useQuery({ queryKey: ['exam-fields', 'all'], queryFn: () => listExamFields({ includeInactive: true }) });
   return (
     <Card>
       <CardHeader

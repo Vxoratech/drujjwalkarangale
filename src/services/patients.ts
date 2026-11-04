@@ -1,5 +1,5 @@
 import { getSupabase } from '@/lib/supabase/client';
-import type { Page, Patient, PatientStatus, UUID } from '@/types/domain';
+import type { DuplicateCandidate, MedicalProfile, Page, Patient, PatientStatus, UUID } from '@/types/domain';
 import { escapeFilter, unwrap, unwrapPage } from './_helpers';
 
 export interface PatientListParams {
@@ -9,23 +9,22 @@ export interface PatientListParams {
   sort?: { key: 'name' | 'patient_code' | 'created_at'; direction: 'asc' | 'desc' };
   /** Defaults to active patients only. */
   status?: PatientStatus | 'all';
-  /** Assigned doctor; 'none' = unassigned. */
-  doctorId?: UUID | 'none';
+  /** Registering branch; patients are central, so this is a filter only. */
+  branchId?: UUID;
 }
 
 export type PatientListItem = Pick<
   Patient,
-  'id' | 'patient_code' | 'first_name' | 'last_name' | 'gender' | 'date_of_birth' | 'approx_age_years' | 'phone' | 'city' | 'prakriti' | 'assigned_doctor_id' | 'status' | 'created_at'
+  'id' | 'patient_code' | 'first_name' | 'last_name' | 'gender' | 'date_of_birth' | 'approx_age_years' | 'phone' | 'city' | 'registered_branch_id' | 'status' | 'created_at'
 >;
 
-const LIST_COLUMNS = 'id, patient_code, first_name, last_name, gender, date_of_birth, approx_age_years, phone, city, prakriti, assigned_doctor_id, status, created_at';
+const LIST_COLUMNS = 'id, patient_code, first_name, last_name, gender, date_of_birth, approx_age_years, phone, city, registered_branch_id, status, created_at';
 
-export async function listPatients(clinicId: UUID, params: PatientListParams): Promise<Page<PatientListItem>> {
-  let q = getSupabase().from('patients').select(LIST_COLUMNS, { count: 'exact' }).eq('clinic_id', clinicId);
+export async function listPatients(params: PatientListParams): Promise<Page<PatientListItem>> {
+  let q = getSupabase().from('patients').select(LIST_COLUMNS, { count: 'exact' });
   const status = params.status ?? 'active';
   if (status !== 'all') q = q.eq('status', status);
-  if (params.doctorId === 'none') q = q.is('assigned_doctor_id', null);
-  else if (params.doctorId) q = q.eq('assigned_doctor_id', params.doctorId);
+  if (params.branchId) q = q.eq('registered_branch_id', params.branchId);
   const term = params.search ? escapeFilter(params.search) : '';
   if (term) {
     const digits = term.replace(/\D/g, '');
@@ -42,8 +41,8 @@ export async function listPatients(clinicId: UUID, params: PatientListParams): P
 }
 
 /** Lightweight lookup for pickers (appointment booking, invoices). */
-export async function searchPatients(clinicId: UUID, search: string, limit = 8): Promise<PatientListItem[]> {
-  const page = await listPatients(clinicId, { search, page: 1, pageSize: limit, sort: { key: 'name', direction: 'asc' } });
+export async function searchPatients(search: string, limit = 8): Promise<PatientListItem[]> {
+  const page = await listPatients({ search, page: 1, pageSize: limit, sort: { key: 'name', direction: 'asc' } });
   return page.rows;
 }
 
@@ -56,16 +55,41 @@ export async function viewPatient(id: UUID): Promise<Patient> {
 }
 
 /** Plain read without an access log — for pickers and print headers. */
-export async function getPatient(clinicId: UUID, id: UUID): Promise<Patient> {
-  return unwrap<Patient>(await getSupabase().from('patients').select('*').eq('clinic_id', clinicId).eq('id', id).single());
+export async function getPatient(id: UUID): Promise<Patient> {
+  return unwrap<Patient>(await getSupabase().from('patients').select('*').eq('id', id).single());
 }
 
-export type PatientInput = Omit<Patient, 'id' | 'clinic_id' | 'patient_code' | 'created_at' | 'branch_id' | 'registered_on'>;
+export type PatientInput = Omit<Patient, 'id' | 'patient_code' | 'created_at' | 'registered_branch_id' | 'registered_on' | 'duplicate_reviewed'>;
 
-export async function createPatient(clinicId: UUID, input: PatientInput): Promise<Patient> {
-  return unwrap<Patient>(await getSupabase().from('patients').insert({ ...input, clinic_id: clinicId }).select('*').single());
+/** Likely existing records for a registration (same phone, similar name with matching age). */
+export async function findPossibleDuplicates(input: { first_name: string; last_name: string; phone: string | null; date_of_birth: string | null; approx_age_years: number | null }): Promise<DuplicateCandidate[]> {
+  return unwrap<DuplicateCandidate[]>(
+    await getSupabase().rpc('find_possible_duplicates', {
+      p_first_name: input.first_name,
+      p_last_name: input.last_name,
+      p_phone: input.phone,
+      p_date_of_birth: input.date_of_birth,
+      p_approx_age: input.approx_age_years,
+    }),
+  );
 }
 
-export async function updatePatient(clinicId: UUID, id: UUID, input: Partial<PatientInput>): Promise<Patient> {
-  return unwrap<Patient>(await getSupabase().from('patients').update(input).eq('clinic_id', clinicId).eq('id', id).select('*').single());
+/** Thrown by the server when duplicates exist and the user has not reviewed them. */
+export const DUPLICATE_REVIEW_REQUIRED = 'P0003';
+
+export async function registerPatient(input: PatientInput, branchId: UUID | null, duplicateReviewed: boolean): Promise<Patient> {
+  return unwrap<Patient>(await getSupabase().rpc('register_patient', { p_patient: input, p_branch: branchId, p_duplicate_reviewed: duplicateReviewed }));
+}
+
+export async function updatePatient(id: UUID, input: Partial<PatientInput>): Promise<Patient> {
+  return unwrap<Patient>(await getSupabase().from('patients').update(input).eq('id', id).select('*').single());
+}
+
+/** Medical background; null when none is recorded or the viewer lacks the history permission. */
+export async function getMedicalProfile(patientId: UUID): Promise<MedicalProfile | null> {
+  return unwrap<MedicalProfile | null>(await getSupabase().from('patient_medical_profiles').select('patient_id, blood_group, allergies, chronic_conditions, prakriti').eq('patient_id', patientId).maybeSingle());
+}
+
+export async function saveMedicalProfile(patientId: UUID, input: Omit<MedicalProfile, 'patient_id'>): Promise<MedicalProfile> {
+  return unwrap<MedicalProfile>(await getSupabase().rpc('save_medical_profile', { p_patient: patientId, p_medical: input }));
 }

@@ -2,15 +2,22 @@
 
 **Vaidyora by Vxora Tech** — *Ancient Wisdom. Modern Practice.*
 
-A multi-tenant clinic-management SaaS for Ayurvedic clinics and practitioners in India. English and Marathi, INR, Asia/Kolkata, DD/MM/YYYY.
+Clinic management for **Dr. Ujjwal Karangale's Ayurvedic clinic**: one organization, several branches, one doctor, and a staff whose access is set per person. English and Marathi, INR, Asia/Kolkata, DD/MM/YYYY.
+
+- **Primary doctor** (Dr. Ujjwal): the only clinical author. Consultations, examinations and prescriptions are doctor-only permissions that can never be granted to anyone else.
+- **Administrators**: run the clinic across all branches, with read-only clinical access. Only the doctor can appoint them.
+- **Staff** (receptionist, coordinator, accountant, billing executive, assistant, branch manager, custom): a role template plus individual grants and denies, limited to their assigned branches.
+- **Patients** have one central profile across branches; every visit, bill and document records the branch that handled it.
+
+There is no public sign-up and no way to register another clinic or doctor.
 
 | Layer | Stack |
 | --- | --- |
 | Frontend | React 18, TypeScript (strict), Vite, Tailwind CSS, React Router, TanStack Query, React Hook Form + Zod, Radix UI, Lucide, Sonner |
 | Backend | Supabase: Auth, PostgreSQL with Row Level Security, Storage, Edge Functions |
-| Tests | Vitest + Testing Library (unit/components); PGlite (real Postgres in WASM) for migrations, RLS and RPC tests |
+| Tests | Vitest + Testing Library; PGlite (real Postgres in WASM) for migrations, RLS and functions; Playwright + axe |
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design, [docs/DATABASE.md](docs/DATABASE.md) for every table (generated), [docs/PERMISSIONS.md](docs/PERMISSIONS.md) for the role matrix, [docs/API.md](docs/API.md) for service contracts, [docs/SECURITY.md](docs/SECURITY.md) for storage, security, privacy and backup, [docs/FEATURES.md](docs/FEATURES.md) for status and acceptance criteria, [docs/USER_JOURNEYS.md](docs/USER_JOURNEYS.md), [docs/ERD.md](docs/ERD.md), [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md), and [docs/RELEASE.md](docs/RELEASE.md) for remaining gaps and release blockers. Phase-by-phase reports: [docs/PHASE_REPORTS.md](docs/PHASE_REPORTS.md). Start with [docs/PHASE_A.md](docs/PHASE_A.md) (architecture overview) and [docs/DEFINITION_OF_DONE.md](docs/DEFINITION_OF_DONE.md).
+Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) first. Then [PERMISSIONS.md](docs/PERMISSIONS.md) (generated matrix), [DATABASE.md](docs/DATABASE.md) and [ERD.md](docs/ERD.md) (generated), [API.md](docs/API.md), [SECURITY.md](docs/SECURITY.md), [DEPLOYMENT.md](docs/DEPLOYMENT.md), [RELEASE.md](docs/RELEASE.md) (blockers), [FEATURES.md](docs/FEATURES.md), [USER_JOURNEYS.md](docs/USER_JOURNEYS.md) and [PHASE_REPORTS.md](docs/PHASE_REPORTS.md).
 
 ## Quick start (local)
 
@@ -25,19 +32,28 @@ npm run dev                    # http://localhost:5173
 
 Without `.env.local` the app shows a **Backend not configured** screen. It never pretends to work without a backend.
 
-### Demo data (optional)
+### First-time setup: the doctor and the first administrator
 
-Seeds a fictional clinic with three users (owner doctor, admin, doctor), patients, appointments, a finalized consultation, an issued prescription, and invoices. The password comes from your shell; it is never committed.
+The organization and its primary branch are created by the migrations. The doctor is bound once, by trusted setup (never from the app):
+
+```bash
+SUPABASE_URL=<url> SUPABASE_SERVICE_ROLE_KEY=<service-role> SITE_URL=<app url> \
+DOCTOR_EMAIL=<doctor's email> ADMIN_EMAIL=<optional admin email> ADMIN_NAME='<name>' npm run bootstrap
+```
+
+Both receive an invitation email and set their own password. After that, all staff are added in **Staff Management**. The SQL editor equivalent is `select public.bootstrap_primary_doctor('<email>');` once the auth user exists.
+
+### Demo data (optional, local or disposable staging only)
 
 ```bash
 SUPABASE_URL=http://127.0.0.1:54321 SUPABASE_ANON_KEY=<anon> SUPABASE_SERVICE_ROLE_KEY=<service-role> DEMO_PASSWORD='<choose one>' npm run seed:demo
 ```
 
-Sign in as `dr.ujjwal@demo.vaidyora.test` (admin + doctor), `admin@demo.vaidyora.test` (admin) or `dr.meera@demo.vaidyora.test` (doctor). The script refuses to run against a hosted `*.supabase.co` project unless `ALLOW_REMOTE_SEED=yes`.
+Creates the doctor, an admin, a second branch, a receptionist, an accountant and a branch manager (`…@demo.vaidyora.test`), with fictional patients, appointments, a finalized consultation and an invoice. It refuses a hosted `*.supabase.co` project unless `ALLOW_REMOTE_SEED=yes`.
 
 ### Edge Functions
 
-`invite-member` (staff invitations) and `document-url` (audited, short-lived links to patient files):
+`staff-admin` (staff invitations, password resets, activation and sign-in blocking, administrator appointment) and `document-url` (audited, short-lived links to patient files):
 
 ```bash
 supabase functions serve --env-file supabase/functions/.env
@@ -54,15 +70,15 @@ supabase functions serve --env-file supabase/functions/.env
 | `npm run lint` | ESLint (strict TS rules, no `any`) |
 | `npm test` | Unit, component and database/RLS tests |
 | `npm run test:e2e` | Playwright end-to-end tests (see [docs/TESTING.md](docs/TESTING.md)) |
-| `npm run test:db` | Database tests only (migrations + RLS + RPCs in PGlite) |
-| `npm run db:types` | Generate full Supabase types from the local DB |
-| `npm run seed:demo` | Seed the fictional demo clinic (see above) |
-| `npm run docs:db` | Regenerate `docs/DATABASE.md` and `docs/PERMISSIONS.md` from the migrations |
+| `npm run test:db` | Database tests only (migrations + RLS + functions in PGlite) |
+| `npm run bootstrap` | Bind the primary doctor and appoint the first administrator (service role) |
+| `npm run seed:demo` | Seed fictional demo data (see above) |
+| `npm run docs:db` | Regenerate `docs/DATABASE.md`, `docs/PERMISSIONS.md` and `docs/ERD.md` from the migrations |
 
 ## Security essentials
 
 - The browser only ever gets the **anon/publishable** key. `readEnv()` refuses to start if a service-role key is put in a `VITE_*` variable.
-- Every tenant table has RLS. Permissions are data (`role_permissions`), and the UI reads them through `my_permissions()` only to decide what to show; the database enforces them.
-- Money-moving and numbering operations (invoices, payments, issuing prescriptions, finalizing consultations) run as server-side RPCs inside a single transaction.
-- Audit logs store who, what, and which **field names** changed, never the values, so they hold no PHI.
-- User-facing errors go through `toUserMessage()`, which only passes through messages our own SQL raises deliberately.
+- Every table has RLS. Effective permissions are computed in the database (`private.can`, `private.can_at`); the UI reads `my_access()` only to decide what to show.
+- Exactly one organization and at most one primary doctor are enforced by constraints; nobody can edit their own access, and doctor-only permissions are rejected by trigger anywhere but the doctor's role.
+- Money-moving and numbering operations run as server-side functions inside a single transaction, idempotent on a request key.
+- Audit logs store who, what, which branch, which **field names** changed and which permission keys were granted or revoked, never clinical values.

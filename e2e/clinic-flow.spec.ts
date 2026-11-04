@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 /**
  * Critical clinical flow against a DISPOSABLE test project seeded with
  * `npm run seed:demo`. Skipped unless these are set:
- *   E2E_SUPABASE_URL, E2E_SUPABASE_ANON_KEY, E2E_EMAIL (an admin+doctor), E2E_PASSWORD
+ *   E2E_SUPABASE_URL, E2E_SUPABASE_ANON_KEY, E2E_EMAIL (the primary doctor), E2E_PASSWORD
  * Never point this at a project with real patients: it creates records.
  */
 const live = Boolean(process.env.E2E_SUPABASE_URL && process.env.E2E_EMAIL && process.env.E2E_PASSWORD);
@@ -15,6 +15,7 @@ test.describe('clinic flow (live backend)', () => {
   test('register → consult → examine → prescribe → issue → print', async ({ page, isMobile }) => {
     test.skip(isMobile, 'Run the full flow once, on desktop');
     const name = `E2E ${Date.now().toString(36)}`;
+    const phone = `+91 9${String(Date.now()).slice(-9)}`;
 
     await page.goto('/auth/sign-in');
     await page.getByLabel(/Email address/).fill(process.env.E2E_EMAIL!);
@@ -26,8 +27,11 @@ test.describe('clinic flow (live backend)', () => {
     await page.getByRole('link', { name: 'Patients' }).first().click();
     await page.getByRole('button', { name: 'Register patient' }).first().click();
     await page.getByLabel(/^First name/).fill(name);
-    await page.getByLabel(/Mobile number/).fill('+91 90000 00000');
-    await page.getByRole('button', { name: 'Save' }).click();
+    await page.getByLabel(/Mobile number/).fill(phone);
+    await page.getByRole('dialog').getByRole('button', { name: 'Register patient' }).click();
+    // A similar earlier E2E record may be offered for review; this is a new person.
+    const anyway = page.getByRole('button', { name: 'Register as new patient' });
+    if (await anyway.isVisible().catch(() => false)) await anyway.click();
     await expect(page.getByRole('heading', { name: new RegExp(name) })).toBeVisible();
 
     // Consultation with Ayurvedic examination, then finalize

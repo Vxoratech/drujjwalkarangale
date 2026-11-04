@@ -3,13 +3,11 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PatientFormDrawer } from '@/features/patients/PatientFormDrawer';
 import { PatientsPage } from '@/features/patients/PatientsPage';
-import { DOCTOR_PERMISSIONS, renderRoute } from './render';
+import { RECEPTIONIST_PERMISSIONS, renderRoute } from './render';
 
-const USER_ID = '00000000-0000-4000-8000-0000000000aa';
 vi.mock('@/features/auth/AuthProvider', () => ({ useCurrentUser: () => ({ id: '00000000-0000-4000-8000-0000000000aa', email: 'dr@example.test', user_metadata: { full_name: 'Dr. Test' } }) }));
-vi.mock('@/services/clinic', () => ({ fetchDoctors: vi.fn().mockResolvedValue([{ user_id: '00000000-0000-4000-8000-0000000000aa', full_name: 'Dr. Test' }]) }));
 
-const patients = vi.hoisted(() => ({ listPatients: vi.fn(), createPatient: vi.fn(), updatePatient: vi.fn() }));
+const patients = vi.hoisted(() => ({ listPatients: vi.fn(), registerPatient: vi.fn(), updatePatient: vi.fn(), findPossibleDuplicates: vi.fn(), DUPLICATE_REVIEW_REQUIRED: 'P0003' }));
 vi.mock('@/services/patients', () => patients);
 
 beforeEach(() => vi.clearAllMocks());
@@ -18,23 +16,53 @@ describe('patient registration', () => {
   it('validates required and malformed fields before calling the server', async () => {
     renderRoute(<PatientFormDrawer open onOpenChange={() => undefined} />);
     await userEvent.type(await screen.findByLabelText(/Mobile number/), 'abc');
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Register patient' }));
     expect(await screen.findByText('This field is required.')).toBeInTheDocument();
     expect(screen.getByText('Enter a valid phone number.')).toBeInTheDocument();
-    expect(patients.createPatient).not.toHaveBeenCalled();
+    expect(patients.findPossibleDuplicates).not.toHaveBeenCalled();
+    expect(patients.registerPatient).not.toHaveBeenCalled();
   });
 
-  it('submits trimmed values, blanks as null, and self-assigns a doctor', async () => {
-    patients.createPatient.mockResolvedValue({ id: 'p1', first_name: 'Asha' });
+  it('checks for duplicates, then registers trimmed values at the current branch', async () => {
+    patients.findPossibleDuplicates.mockResolvedValue([]);
+    patients.registerPatient.mockResolvedValue({ id: 'p1', first_name: 'Asha' });
     const saved = vi.fn();
-    renderRoute(<PatientFormDrawer open onOpenChange={() => undefined} onSaved={saved} />, { permissions: DOCTOR_PERMISSIONS, roles: ['doctor'] });
+    renderRoute(<PatientFormDrawer open onOpenChange={() => undefined} onSaved={saved} />, { permissions: RECEPTIONIST_PERMISSIONS, account: 'staff' });
     await userEvent.type(await screen.findByLabelText(/First name/), '  Asha  ');
     await userEvent.type(screen.getByLabelText(/Mobile number/), '+91 98220 10001');
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
-    await waitFor(() => expect(patients.createPatient).toHaveBeenCalledTimes(1));
-    const [, input] = patients.createPatient.mock.calls[0]!;
-    expect(input).toMatchObject({ first_name: 'Asha', phone: '+91 98220 10001', email: null, assigned_doctor_id: USER_ID, status: 'active' });
+    await userEvent.click(screen.getByRole('button', { name: 'Register patient' }));
+    await waitFor(() => expect(patients.registerPatient).toHaveBeenCalledTimes(1));
+    const [input, branch, reviewed] = patients.registerPatient.mock.calls[0]!;
+    expect(input).toMatchObject({ first_name: 'Asha', phone: '+91 98220 10001', email: null, status: 'active' });
+    expect(input).not.toHaveProperty('allergies');
+    expect(branch).toBe('b-main');
+    expect(reviewed).toBe(false);
     await waitFor(() => expect(saved).toHaveBeenCalled());
+  });
+
+  it('shows likely duplicates and registers only after the user confirms it is someone else', async () => {
+    patients.findPossibleDuplicates.mockResolvedValue([
+      { patient_id: 'p9', patient_code: 'P-000009', first_name: 'Asha', last_name: 'Patil', phone: '+91 98220 10001', date_of_birth: null, registered_branch: 'Main Clinic', match_reasons: ['phone', 'name'], score: 0.9 },
+    ]);
+    patients.registerPatient.mockResolvedValue({ id: 'p2', first_name: 'Asha' });
+    renderRoute(<PatientFormDrawer open onOpenChange={() => undefined} />, { permissions: RECEPTIONIST_PERMISSIONS, account: 'staff' });
+    await userEvent.type(await screen.findByLabelText(/First name/), 'Asha');
+    await userEvent.type(screen.getByLabelText(/Mobile number/), '+91 98220 10001');
+    await userEvent.click(screen.getByRole('button', { name: 'Register patient' }));
+    expect(await screen.findByText('1 similar record(s) found')).toBeInTheDocument();
+    expect(screen.getByText('Same phone')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open existing' })).toBeInTheDocument();
+    expect(patients.registerPatient).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: 'Register as new patient' }));
+    await waitFor(() => expect(patients.registerPatient).toHaveBeenCalledTimes(1));
+    expect(patients.registerPatient.mock.calls[0]![2]).toBe(true);
+  });
+
+  it('locks identity fields for staff who may edit contact details only', async () => {
+    const patient = { id: 'p1', patient_code: 'P-000001', first_name: 'Asha', last_name: 'Patil', gender: 'female', status: 'active', preferred_locale: 'en' } as never;
+    renderRoute(<PatientFormDrawer open onOpenChange={() => undefined} patient={patient} />, { permissions: RECEPTIONIST_PERMISSIONS, account: 'staff' });
+    expect(await screen.findByLabelText(/First name/)).toBeDisabled();
+    expect(screen.getByLabelText(/Mobile number/)).toBeEnabled();
   });
 });
 
@@ -45,7 +73,7 @@ describe('patient list states', () => {
     renderRoute(<PatientsPage />, { path: '/patients', url: '/patients' });
     expect(await screen.findByRole('status', { name: 'Loading…' })).toBeInTheDocument();
     resolve({
-      rows: [{ id: 'p1', patient_code: 'P-000001', first_name: 'Sunita', last_name: 'Pawar', gender: 'female', date_of_birth: '1978-04-12', approx_age_years: null, phone: '+91 98220 10001', city: 'Pune', prakriti: null, assigned_doctor_id: null, status: 'active', created_at: '2026-10-01T05:00:00Z' }],
+      rows: [{ id: 'p1', patient_code: 'P-000001', first_name: 'Sunita', last_name: 'Pawar', gender: 'female', date_of_birth: '1978-04-12', approx_age_years: null, phone: '+91 98220 10001', city: 'Pune', registered_branch_id: 'b-main', status: 'active', created_at: '2026-10-01T05:00:00Z' }],
       total: 1,
     });
     expect((await screen.findAllByText('Sunita Pawar')).length).toBeGreaterThan(0);

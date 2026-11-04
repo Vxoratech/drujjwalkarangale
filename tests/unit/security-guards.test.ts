@@ -44,7 +44,7 @@ describe('browser code security guards', () => {
     const declared = files.flatMap((f) => [...f.src.matchAll(/const (\w+_KEY|EXPIRED_FLAG) = '([^']+)'/g)].map((m) => [m[1]!, m[2]!] as const));
     const values = [...keys].map((k) => (k.startsWith("'") ? k.slice(1, -1) : declared.find(([n]) => n === k)?.[1] ?? `(dynamic:${k})`));
     // i18n writes through a helper (`key`) that is only called with its two constants.
-    const allowed = ['vaidyora.locale', 'vaidyora.bilingual', 'vaidyora.sidebarCollapsed', 'vaidyora.activeClinic', 'vaidyora.sessionExpired', '(dynamic:key)'];
+    const allowed = ['vaidyora.locale', 'vaidyora.bilingual', 'vaidyora.sidebarCollapsed', 'vaidyora.branchFilter', 'vaidyora.sessionExpired', '(dynamic:key)'];
     expect(values.filter((v) => !allowed.includes(v))).toEqual([]);
   });
 

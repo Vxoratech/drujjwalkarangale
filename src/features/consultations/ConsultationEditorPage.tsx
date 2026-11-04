@@ -14,11 +14,10 @@ import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { ConfirmDialog } from '@/components/ui/Dialog';
 import { Checkbox, DateInput, Input, RadioGroup, Select, Textarea } from '@/components/ui/Input';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { useCurrentUser } from '@/features/auth/AuthProvider';
-import { useClinic } from '@/features/clinic/ClinicProvider';
+import { BranchSelect } from '@/components/ui/BranchFilter';
+import { useAccess } from '@/features/access/AccessProvider';
 import { DocumentsPanel } from '@/features/documents/DocumentsPanel';
 import { InvestigationsPanel } from '@/features/investigations/InvestigationsPanel';
-import { useDoctors } from '@/hooks/useDoctors';
 import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { cn } from '@/lib/cn';
 import { isPermissionError, toUserMessage } from '@/lib/errors';
@@ -28,7 +27,7 @@ import { useFieldError } from '@/lib/validation/useFieldError';
 import { useI18n, type TranslationKey } from '@/locales/i18n';
 import { getAppointment } from '@/services/appointments';
 import { addAmendment, finalizeConsultation, getConsultation, listAmendments, listConsultations, listExamFields, listPrescriptions, saveConsultation } from '@/services/clinical';
-import { getPatient } from '@/services/patients';
+import { getMedicalProfile, getPatient } from '@/services/patients';
 import { AGNIS, AMA_LEVELS, BALAS, DOSHAS, KOSHTHAS, PRAKRITIS, type ConsultationSection } from '@/types/domain';
 import { computeBmi, consultationSchema, offersMenstrualHistory, toConsultationForm, toConsultationPayload, type ConsultationFormInput, type ConsultationFormValues } from './consultationSchema';
 
@@ -46,8 +45,8 @@ const NARRATIVE = [
 
 function RxPanel({ consultationId, patientId, canWrite }: { consultationId: string; patientId: string; canWrite: boolean }) {
   const { t } = useI18n();
-  const { clinicId } = useClinic();
-  const q = useQuery({ queryKey: qk.prescriptions(clinicId, { consultationId }), queryFn: () => listPrescriptions(clinicId, { consultationId }) });
+  
+  const q = useQuery({ queryKey: qk.prescriptions({ consultationId }), queryFn: () => listPrescriptions({ consultationId }) });
   return (
     <Card>
       <CardHeader
@@ -88,9 +87,8 @@ function RxPanel({ consultationId, patientId, canWrite }: { consultationId: stri
 /** Earlier visits of the same patient, for review before and during a consultation. */
 function PreviousVisits({ patientId, excludeId }: { patientId: string; excludeId?: string }) {
   const { t } = useI18n();
-  const { clinicId } = useClinic();
-  const { names } = useDoctors();
-  const q = useQuery({ queryKey: qk.consultations(clinicId, { patientId }), queryFn: () => listConsultations(clinicId, { patientId }) });
+  const { branchName } = useAccess();
+  const q = useQuery({ queryKey: qk.consultations({ patientId }), queryFn: () => listConsultations({ patientId }) });
   const rows = (q.data ?? []).filter((v) => v.id !== excludeId).slice(0, 5);
   return (
     <Card>
@@ -108,7 +106,7 @@ function PreviousVisits({ patientId, excludeId }: { patientId: string; excludeId
                   <summary className="flex cursor-pointer list-none items-start justify-between gap-2 text-sm">
                     <span className="min-w-0">
                       <span className="tabular block text-xs text-ink-muted">
-                        {formatDate(v.visit_date)} · {names.get(v.doctor_id) ?? ''}
+                        {formatDate(v.visit_date)} · {branchName(v.branch_id)}
                       </span>
                       <span className="line-clamp-1 font-medium">{v.chief_complaint}</span>
                     </span>
@@ -133,22 +131,20 @@ function PreviousVisits({ patientId, excludeId }: { patientId: string; excludeId
 /** Append-only addenda for finalized consultations. */
 function AmendmentsPanel({ consultationId, canAmend }: { consultationId: string; canAmend: boolean }) {
   const { t } = useI18n();
-  const { clinicId } = useClinic();
-  const { names } = useDoctors();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState('');
   const [content, setContent] = useState('');
-  const q = useQuery({ queryKey: [clinicId, 'amendments', consultationId, 'list'], queryFn: () => listAmendments(consultationId) });
+  const q = useQuery({ queryKey: ['amendments', consultationId, 'list'], queryFn: () => listAmendments(consultationId) });
   const add = useMutation({
-    mutationFn: () => addAmendment(clinicId, { consultationId, reason: reason.trim(), content: content.trim() }),
+    mutationFn: () => addAmendment({ consultationId, reason: reason.trim(), content: content.trim() }),
     onSuccess: async () => {
       notify.success(t('history.amendmentAdded'));
       setOpen(false);
       setReason('');
       setContent('');
-      await queryClient.invalidateQueries({ queryKey: [clinicId, 'amendments', consultationId] });
-      await queryClient.invalidateQueries({ queryKey: [clinicId, 'consultations'] });
+      await queryClient.invalidateQueries({ queryKey: ['amendments', consultationId] });
+      await queryClient.invalidateQueries({ queryKey: ['consultations'] });
     },
     onError: (e) => notify.error(e),
   });
@@ -172,7 +168,7 @@ function AmendmentsPanel({ consultationId, canAmend }: { consultationId: string;
             {q.data!.map((a) => (
               <li key={a.id} className="border-l-2 border-gold pl-3 text-sm">
                 <p className="tabular text-xs text-ink-muted">
-                  {formatDateTime(a.created_at)} · {names.get(a.author_id) ?? ''}
+                  {formatDateTime(a.created_at)}
                 </p>
                 <p className="font-medium">{a.reason}</p>
                 <p className="whitespace-pre-line">{a.content}</p>
@@ -207,29 +203,31 @@ export function ConsultationEditorPage() {
   const [search] = useSearchParams();
   const navigate = useNavigate();
   const { t, tb, locale } = useI18n();
-  const user = useCurrentUser();
-  const { clinicId, can } = useClinic();
-  const { names } = useDoctors();
+  const { can, settings, defaultBranchId, branches, branchName } = useAccess();
   const queryClient = useQueryClient();
   const fieldError = useFieldError();
   const [confirmFinalize, setConfirmFinalize] = useState(false);
-  const { clinic } = useClinic();
-  const show = (section: ConsultationSection) => clinic.settings.consultation_sections?.[section] !== false;
-  const examFields = useQuery({ queryKey: [clinicId, 'exam-fields'], queryFn: () => listExamFields(clinicId), staleTime: 5 * 60_000 });
+  const [chosenBranch, setChosenBranch] = useState(defaultBranchId ?? '');
+  const show = (section: ConsultationSection) => settings.preferences.consultation_sections?.[section] !== false;
+  const examFields = useQuery({ queryKey: ['exam-fields'], queryFn: () => listExamFields(), staleTime: 5 * 60_000 });
 
-  const bundle = useQuery({ queryKey: qk.consultation(clinicId, consultationId ?? ''), queryFn: () => getConsultation(clinicId, consultationId!), enabled: Boolean(consultationId) });
+  const bundle = useQuery({ queryKey: qk.consultation(consultationId ?? ''), queryFn: () => getConsultation(consultationId!), enabled: Boolean(consultationId) });
   const appointmentId = consultationId ? bundle.data?.consultation.appointment_id ?? null : search.get('appointment');
   const patientId = consultationId ? bundle.data?.consultation.patient_id : search.get('patient');
-  const patient = useQuery({ queryKey: qk.patient(clinicId, patientId ?? ''), queryFn: () => getPatient(clinicId, patientId!), enabled: Boolean(patientId) });
-  const appointment = useQuery({ queryKey: qk.appointment(clinicId, appointmentId ?? ''), queryFn: () => getAppointment(clinicId, appointmentId!), enabled: Boolean(appointmentId) && !consultationId });
+  const patient = useQuery({ queryKey: qk.patient(patientId ?? ''), queryFn: () => getPatient(patientId!), enabled: Boolean(patientId) });
+  const appointment = useQuery({ queryKey: qk.appointment(appointmentId ?? ''), queryFn: () => getAppointment(appointmentId!), enabled: Boolean(appointmentId) && !consultationId });
+  const medical = useQuery({ queryKey: ['medical-profile', patientId], queryFn: () => getMedicalProfile(patientId!), enabled: Boolean(patientId) && can('patients.view_history') });
 
   const c = bundle.data?.consultation;
   const amendmentCount = useQuery({
-    queryKey: [clinicId, 'amendments', consultationId],
+    queryKey: ['amendments', consultationId],
     queryFn: async () => (await listAmendments(consultationId!)).length,
     enabled: Boolean(consultationId) && c?.status === 'finalized',
   });
-  const readOnly = Boolean(c && (c.status === 'finalized' || c.doctor_id !== user.id)) || !can('clinical.write');
+  // Only the primary doctor writes clinical records; everyone else reads.
+  const readOnly = Boolean(c && c.status === 'finalized') || !can(c ? 'consultations.edit' : 'consultations.create');
+  // The visit belongs to the appointment's branch, else the branch chosen here.
+  const branchId = c?.branch_id ?? appointment.data?.branch_id ?? chosenBranch;
 
   const form = useForm<ConsultationFormInput, unknown, ConsultationFormValues>({ resolver: zodResolver(consultationSchema), defaultValues: toConsultationForm() });
   const { register, control, formState, reset } = form;
@@ -239,8 +237,8 @@ export function ConsultationEditorPage() {
     if (consultationId && bundle.data) reset(toConsultationForm(bundle.data.consultation, bundle.data.examination));
     // Prefill a new consultation only while it is untouched, so late-arriving
     // patient or appointment data never wipes what the doctor has typed.
-    else if (!consultationId && patient.data && JSON.stringify(form.getValues()) === JSON.stringify(toConsultationForm())) reset({ ...toConsultationForm(null, null, patient.data.prakriti), chief_complaint: appointment.data?.reason ?? '' });
-  }, [consultationId, bundle.data, patient.data, appointment.data, reset, form]);
+    else if (!consultationId && patient.data && JSON.stringify(form.getValues()) === JSON.stringify(toConsultationForm())) reset({ ...toConsultationForm(null, null, medical.data?.prakriti ?? null), chief_complaint: appointment.data?.reason ?? '' });
+  }, [consultationId, bundle.data, patient.data, appointment.data, medical.data, reset, form]);
 
   useUnsavedChangesGuard(formState.isDirty && !readOnly && !formState.isSubmitting, t('consultations.unsaved'));
 
@@ -249,18 +247,18 @@ export function ConsultationEditorPage() {
 
   const save = useMutation({
     mutationFn: async ({ values, finalize }: { values: ConsultationFormValues; finalize: boolean }) => {
-      const payload = toConsultationPayload(values, { patient_id: patientId!, doctor_id: user.id, appointment_id: appointmentId ?? null });
-      const id = await saveConsultation(clinicId, payload.input, payload.exam, consultationId);
+      const payload = toConsultationPayload(values, { patient_id: patientId!, branch_id: branchId, appointment_id: appointmentId ?? null });
+      const id = await saveConsultation(payload.input, payload.exam, consultationId);
       if (finalize) await finalizeConsultation(id);
       return { id, finalize };
     },
     onSuccess: async ({ id, finalize }) => {
       notify.success(finalize ? t('consultations.finalized') : t('consultations.saved'));
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: [clinicId, 'consultation', id] }),
-        queryClient.invalidateQueries({ queryKey: [clinicId, 'consultations'] }),
-        queryClient.invalidateQueries({ queryKey: [clinicId, 'appointments'] }),
-        queryClient.invalidateQueries({ queryKey: [clinicId, 'dashboard'] }),
+        queryClient.invalidateQueries({ queryKey: ['consultation', id] }),
+        queryClient.invalidateQueries({ queryKey: ['consultations'] }),
+        queryClient.invalidateQueries({ queryKey: ['appointments'] }),
+        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
       ]);
       reset(form.getValues());
       if (!consultationId) navigate(`/consultations/${id}`, { replace: true });
@@ -291,7 +289,7 @@ export function ConsultationEditorPage() {
             <PatientIdentity name={fullName(p)} code={p.patient_code} meta={[age !== '—' ? `${age} y` : null, t(`gender.${p.gender}`), p.occupation].filter(Boolean).join(' · ')} />
             {c && <StatusBadge status={c.status} label={c.status === 'draft' ? t('consultations.draft') : t('consultations.final')} />}
             {c && (amendmentCount.data ?? 0) > 0 && <Badge tone="gold">{t('consultations.amended')}</Badge>}
-            {c && c.doctor_id !== user.id && <Badge tone="gold">{names.get(c.doctor_id)}</Badge>}
+            {branches.length > 1 && (c || appointment.data) && <Badge>{branchName(branchId)}</Badge>}
           </>
         }
         actions={
@@ -308,10 +306,17 @@ export function ConsultationEditorPage() {
         }
       />
 
-      {p.allergies && (
+      {!consultationId && !appointmentId && branches.length > 1 && !readOnly && (
+        <div className="mb-4 max-w-xs">
+          <FormField label={t('consultations.branch')}>
+            <BranchSelect value={chosenBranch} onChange={setChosenBranch} />
+          </FormField>
+        </div>
+      )}
+      {medical.data?.allergies && (
         <div className="mb-4">
           <Alert tone="danger" title={t('patients.allergies')}>
-            {p.allergies}
+            {medical.data.allergies}
           </Alert>
         </div>
       )}
@@ -344,7 +349,7 @@ export function ConsultationEditorPage() {
                       ['patients.occupation', p.occupation],
                       ['patients.phone', p.phone],
                       ['patients.address', [p.address_line, p.city].filter(Boolean).join(', ')],
-                      ['patients.chronicConditions', p.chronic_conditions],
+                      ['patients.chronicConditions', medical.data?.chronic_conditions],
                     ] as const
                   ).map(([label, value]) => (
                     <div key={label} className="min-w-0">
@@ -628,21 +633,21 @@ export function ConsultationEditorPage() {
         </form>
 
         <aside className="space-y-4">
-          {c?.status === 'finalized' && <AmendmentsPanel consultationId={c.id} canAmend={c.doctor_id === user.id && can('clinical.write')} />}
+          {c?.status === 'finalized' && <AmendmentsPanel consultationId={c.id} canAmend={can('consultations.edit')} />}
           <PreviousVisits patientId={p.id} excludeId={consultationId} />
           {consultationId ? (
             <>
-              <RxPanel consultationId={consultationId} patientId={p.id} canWrite={!readOnly || (c?.doctor_id === user.id && can('clinical.write'))} />
+              <RxPanel consultationId={consultationId} patientId={p.id} canWrite={can('prescriptions.create')} />
               <Card>
                 <CardHeader title={t('investigations.title')} />
                 <CardBody>
-                  <InvestigationsPanel patientId={p.id} consultationId={consultationId} canWrite={can('clinical.write')} />
+                  <InvestigationsPanel patientId={p.id} consultationId={consultationId} canWrite={can('investigations.order')} />
                 </CardBody>
               </Card>
               <Card>
                 <CardHeader title={t('history.attachments')} />
                 <CardBody>
-                  <DocumentsPanel patientId={p.id} canWrite={can('clinical.write')} />
+                  <DocumentsPanel patientId={p.id} consultationId={consultationId} canWrite={can('investigations.upload')} />
                 </CardBody>
               </Card>
             </>

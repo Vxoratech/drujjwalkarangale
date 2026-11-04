@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -8,28 +8,24 @@ import { FormField, FormGrid } from '@/components/forms/FormField';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Dialog';
 import { DateInput, Input, Select, Textarea } from '@/components/ui/Input';
-import { useClinic } from '@/features/clinic/ClinicProvider';
+import { useAccess } from '@/features/access/AccessProvider';
 import { PatientPicker } from '@/features/patients/PatientPicker';
-import { useDoctors } from '@/hooks/useDoctors';
 import { isoToIstParts, istDateTimeToISO, todayISO } from '@/lib/formatters';
 import { useFieldError } from '@/lib/validation/useFieldError';
 import { useI18n } from '@/locales/i18n';
 import { createAppointment, rescheduleAppointment } from '@/services/appointments';
-import { fetchBranches } from '@/services/clinic';
-import { qk } from '@/lib/query/keys';
 import { APPOINTMENT_SOURCES, APPOINTMENT_TYPES, type AppointmentWithPatient, type UUID } from '@/types/domain';
 
 const DURATIONS = [10, 15, 20, 30, 45, 60, 90, 120] as const;
 
 export const appointmentSchema = z.object({
   patient_id: z.string().uuid({ message: 'required' }),
-  doctor_id: z.string().uuid({ message: 'required' }),
+  branch_id: z.string().uuid({ message: 'required' }),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   time: z.string().regex(/^\d{2}:\d{2}$/),
   duration: z.coerce.number().int().min(5).max(480),
   type: z.enum(APPOINTMENT_TYPES),
   source: z.enum(APPOINTMENT_SOURCES),
-  branch_id: z.string().uuid().optional().or(z.literal('')),
   reason: z.string().trim().max(500).optional().or(z.literal('')),
   notes: z.string().trim().max(1000).optional().or(z.literal('')),
 });
@@ -41,15 +37,11 @@ export interface AppointmentFormModalProps {
   appointment?: AppointmentWithPatient | null;
   defaultDate?: string;
   defaultPatientId?: UUID | null;
-  defaultDoctorId?: UUID | null;
 }
 
-export function AppointmentFormModal({ open, onOpenChange, appointment, defaultDate, defaultPatientId, defaultDoctorId }: AppointmentFormModalProps) {
+export function AppointmentFormModal({ open, onOpenChange, appointment, defaultDate, defaultPatientId }: AppointmentFormModalProps) {
   const { t } = useI18n();
-  const { clinicId, clinic, membership } = useClinic();
-  const { doctors } = useDoctors();
-  const branches = useQuery({ queryKey: qk.branches(clinicId), queryFn: () => fetchBranches(clinicId), staleTime: 5 * 60_000 });
-  const activeBranches = (branches.data ?? []).filter((b) => b.is_active);
+  const { settings, branches, defaultBranchId } = useAccess();
   const queryClient = useQueryClient();
   const fieldError = useFieldError();
 
@@ -63,47 +55,45 @@ export function AppointmentFormModal({ open, onOpenChange, appointment, defaultD
       const minutes = Math.round((new Date(appointment.ends_at).getTime() - new Date(appointment.starts_at).getTime()) / 60000);
       form.reset({
         patient_id: appointment.patient_id,
-        doctor_id: appointment.doctor_id,
         date: start.date,
         time: start.time,
         duration: minutes,
         type: appointment.type,
         source: appointment.source,
-        branch_id: appointment.branch_id ?? '',
+        branch_id: appointment.branch_id,
         reason: appointment.reason ?? '',
         notes: appointment.notes ?? '',
       });
     } else {
       form.reset({
         patient_id: defaultPatientId ?? '',
-        doctor_id: defaultDoctorId ?? (doctors.length === 1 ? doctors[0]!.user_id : ''),
         date: defaultDate ?? todayISO(),
         time: '10:00',
-        duration: clinic.settings.default_appointment_minutes ?? 30,
-        branch_id: membership.default_branch_id ?? '',
+        duration: settings.preferences.default_appointment_minutes ?? 30,
+        branch_id: defaultBranchId ?? '',
         type: 'new_visit',
         source: 'phone',
         reason: '',
         notes: '',
       });
     }
-  }, [open, appointment, defaultDate, defaultPatientId, defaultDoctorId, doctors, form, clinic.settings.default_appointment_minutes, membership.default_branch_id]);
+  }, [open, appointment, defaultDate, defaultPatientId, form, settings.preferences.default_appointment_minutes, defaultBranchId]);
 
   const mutation = useMutation({
     mutationFn: (v: AppointmentFormValues) => {
       const starts_at = istDateTimeToISO(v.date, v.time);
       const ends_at = new Date(new Date(starts_at).getTime() + v.duration * 60000).toISOString();
-      const payload = { doctor_id: v.doctor_id, starts_at, ends_at, type: v.type, reason: v.reason || null, notes: v.notes || null, branch_id: v.branch_id || null };
+      const payload = { branch_id: v.branch_id, starts_at, ends_at, type: v.type, reason: v.reason || null, notes: v.notes || null };
       return appointment
-        ? rescheduleAppointment(clinicId, appointment.id, payload)
-        : createAppointment(clinicId, { ...payload, source: v.source, patient_id: v.patient_id });
+        ? rescheduleAppointment(appointment.id, payload)
+        : createAppointment({ ...payload, source: v.source, patient_id: v.patient_id });
     },
     onSuccess: async () => {
       notify.success(appointment ? t('appointments.updated') : t('appointments.booked'));
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: [clinicId, 'appointments'] }),
-        queryClient.invalidateQueries({ queryKey: [clinicId, 'appointment'] }),
-        queryClient.invalidateQueries({ queryKey: qkDashboard(clinicId) }),
+        queryClient.invalidateQueries({ queryKey: ['appointments'] }),
+        queryClient.invalidateQueries({ queryKey: ['appointment'] }),
+        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
       ]);
       onOpenChange(false);
     },
@@ -131,16 +121,9 @@ export function AppointmentFormModal({ open, onOpenChange, appointment, defaultD
         <FormField label={t('appointments.patient')} error={e.patient_id ? t('validation.required') : undefined} required>
           <Controller control={form.control} name="patient_id" render={({ field }) => <PatientPicker value={field.value || null} onChange={(id) => field.onChange(id ?? '')} disabled={Boolean(appointment)} />} />
         </FormField>
-        <FormGrid>
-          <FormField label={t('appointments.doctor')} error={e.doctor_id ? t('validation.required') : undefined} required>
-            <Select placeholder="—" options={doctors.map((d) => ({ value: d.user_id, label: d.full_name }))} {...form.register('doctor_id')} />
-          </FormField>
-          {activeBranches.length > 1 && (
-            <FormField label={t('appointments.branch')}>
-              <Select placeholder="—" options={activeBranches.map((b) => ({ value: b.id, label: b.name }))} {...form.register('branch_id')} />
-            </FormField>
-          )}
-        </FormGrid>
+        <FormField label={t('appointments.branch')} hint={t('appointments.branchHint')} error={e.branch_id ? t('validation.required') : undefined} required>
+          <Select placeholder="—" options={branches.map((b) => ({ value: b.id, label: b.name }))} {...form.register('branch_id')} />
+        </FormField>
         <FormGrid cols={3}>
           <FormField label={t('appointments.date')} error={fieldError(e.date)} required>
             <DateInput {...form.register('date')} />
@@ -169,8 +152,4 @@ export function AppointmentFormModal({ open, onOpenChange, appointment, defaultD
       </form>
     </Modal>
   );
-}
-
-function qkDashboard(clinicId: string) {
-  return [clinicId, 'dashboard'] as const;
 }

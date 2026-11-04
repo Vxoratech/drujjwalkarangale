@@ -2,23 +2,28 @@ import type { Config } from 'tailwindcss';
 
 // All values reference CSS custom properties defined in src/styles/tokens.css,
 // so the design tokens have a single source of truth.
+
+// Tailwind can't apply opacity modifiers (`text-sage/80`) to a bare `var()`
+// colour and silently emits nothing; color-mix keeps them working.
+const token = (name: string) => `color-mix(in srgb, var(--color-${name}) calc(<alpha-value> * 100%), transparent)`;
+
 const config: Config = {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
     screens: { sm: '640px', md: '768px', lg: '1024px', xl: '1280px', '2xl': '1536px' },
     extend: {
       colors: {
-        forest: { DEFAULT: 'var(--color-forest)', deep: 'var(--color-forest-deep)', hover: 'var(--color-forest-hover)' },
-        sage: { DEFAULT: 'var(--color-sage)', strong: 'var(--color-sage-strong)' },
-        gold: { DEFAULT: 'var(--color-gold)', ink: 'var(--color-gold-ink)', soft: 'var(--color-gold-soft)' },
-        ivory: 'var(--color-ivory)',
-        surface: 'var(--color-surface)',
-        ink: { DEFAULT: 'var(--color-text)', muted: 'var(--color-text-muted)', subtle: 'var(--color-text-subtle)', inverse: 'var(--color-text-inverse)' },
-        line: { DEFAULT: 'var(--color-border)', strong: 'var(--color-border-strong)' },
-        danger: { DEFAULT: 'var(--color-danger)', soft: 'var(--color-danger-soft)' },
-        warning: { DEFAULT: 'var(--color-warning)', soft: 'var(--color-warning-soft)' },
-        success: { DEFAULT: 'var(--color-success)', soft: 'var(--color-success-soft)' },
-        info: { DEFAULT: 'var(--color-info)', soft: 'var(--color-info-soft)' },
+        forest: { DEFAULT: token('forest'), deep: token('forest-deep'), hover: token('forest-hover') },
+        sage: { DEFAULT: token('sage'), strong: token('sage-strong') },
+        gold: { DEFAULT: token('gold'), ink: token('gold-ink'), soft: token('gold-soft') },
+        ivory: token('ivory'),
+        surface: token('surface'),
+        ink: { DEFAULT: token('text'), muted: token('text-muted'), subtle: token('text-subtle'), inverse: token('text-inverse') },
+        line: { DEFAULT: token('border'), strong: token('border-strong') },
+        danger: { DEFAULT: token('danger'), soft: token('danger-soft') },
+        warning: { DEFAULT: token('warning'), soft: token('warning-soft') },
+        success: { DEFAULT: token('success'), soft: token('success-soft') },
+        info: { DEFAULT: token('info'), soft: token('info-soft') },
       },
       fontFamily: {
         // Noto Sans Devanagari covers Marathi glyphs that Manrope/DM Sans lack.

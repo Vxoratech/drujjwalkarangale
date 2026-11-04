@@ -5,20 +5,17 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppointmentActions } from '@/features/appointments/AppointmentActions';
 import type { AppointmentStatus, AppointmentWithPatient } from '@/types/domain';
-import { DOCTOR_PERMISSIONS, renderRoute } from './render';
+import { DOCTOR_PERMISSIONS, RECEPTIONIST_PERMISSIONS, renderRoute } from './render';
 
-const ME = '00000000-0000-4000-8000-0000000000aa';
-const OTHER = '00000000-0000-4000-8000-0000000000bb';
 vi.mock('@/features/auth/AuthProvider', () => ({ useCurrentUser: () => ({ id: '00000000-0000-4000-8000-0000000000aa', email: 'me@example.test', user_metadata: {} }) }));
-vi.mock('@/services/clinic', () => ({ fetchDoctors: vi.fn().mockResolvedValue([]), fetchBranches: vi.fn().mockResolvedValue([]) }));
 const api = vi.hoisted(() => ({ setAppointmentStatus: vi.fn() }));
 vi.mock('@/services/appointments', async (orig) => ({ ...(await orig<typeof import('@/services/appointments')>()), setAppointmentStatus: api.setAppointmentStatus }));
 vi.mock('@/services/clinical', () => ({ findConsultationForAppointment: vi.fn().mockResolvedValue(null) }));
 
 beforeEach(() => vi.clearAllMocks());
 
-const appt = (status: AppointmentStatus, doctorId = ME): AppointmentWithPatient => ({
-  id: 'a1', clinic_id: 'c1', branch_id: null, patient_id: 'p1', doctor_id: doctorId,
+const appt = (status: AppointmentStatus): AppointmentWithPatient => ({
+  id: 'a1', branch_id: 'b-main', patient_id: 'p1',
   starts_at: '2026-11-10T04:30:00Z', ends_at: '2026-11-10T05:00:00Z', type: 'follow_up', status,
   reason: null, source: 'phone', notes: null, cancellation_reason: null, cancelled_at: null,
   patient: { id: 'p1', first_name: 'Sunita', last_name: 'Pawar', patient_code: 'P-000001', phone: null },
@@ -31,25 +28,32 @@ async function menuItems(): Promise<string[]> {
 
 describe('appointment actions by role and status', () => {
   it('front desk can check in, reschedule, mark no-show or cancel a scheduled visit, but not consult', async () => {
-    renderRoute(<AppointmentActions appointment={appt('scheduled', OTHER)} />);
+    renderRoute(<AppointmentActions appointment={appt('scheduled')} />, { permissions: RECEPTIONIST_PERMISSIONS, account: 'staff' });
     expect(await menuItems()).toEqual(['Check in', 'Mark completed', 'Reschedule', 'Mark no-show', 'Cancel appointment']);
   });
 
-  it('the treating doctor can start the consultation', async () => {
-    renderRoute(<AppointmentActions appointment={appt('checked_in')} />, { permissions: DOCTOR_PERMISSIONS, roles: ['doctor'] });
+  it('Dr. Ujjwal can start the consultation from any appointment', async () => {
+    renderRoute(<AppointmentActions appointment={appt('checked_in')} />, { permissions: DOCTOR_PERMISSIONS, account: 'primary_doctor' });
     const items = await menuItems();
     expect(items[0]).toBe('Start consultation');
-    expect(items).not.toContain('Reschedule');
   });
 
-  it("another doctor gets no actions on a colleague's appointment", () => {
-    renderRoute(<AppointmentActions appointment={appt('scheduled', OTHER)} />, { permissions: DOCTOR_PERMISSIONS, roles: ['doctor'] });
+  it('staff without appointment permissions get no actions', () => {
+    renderRoute(<AppointmentActions appointment={appt('scheduled')} />, { permissions: ['billing.view', 'billing.create'], account: 'staff' });
     expect(screen.queryByRole('button', { name: 'Actions' })).not.toBeInTheDocument();
+  });
+
+  it('cancelling needs its own permission', async () => {
+    renderRoute(<AppointmentActions appointment={appt('scheduled')} />, { permissions: ['appointments.view', 'appointments.update_status'], account: 'staff' });
+    const items = await menuItems();
+    expect(items).toContain('Check in');
+    expect(items).not.toContain('Cancel appointment');
+    expect(items).not.toContain('Reschedule');
   });
 
   it('completed, cancelled and no-show visits are final', () => {
     for (const s of ['completed', 'cancelled', 'no_show'] as const) {
-      const { unmount } = renderRoute(<AppointmentActions appointment={appt(s, OTHER)} />);
+      const { unmount } = renderRoute(<AppointmentActions appointment={appt(s)} />);
       expect(screen.queryByRole('button', { name: 'Actions' })).not.toBeInTheDocument();
       unmount();
     }
@@ -57,7 +61,7 @@ describe('appointment actions by role and status', () => {
 
   it('cancelling requires a reason, which is sent to the server', async () => {
     api.setAppointmentStatus.mockResolvedValue({});
-    renderRoute(<AppointmentActions appointment={appt('scheduled', OTHER)} />);
+    renderRoute(<AppointmentActions appointment={appt('scheduled')} />);
     await userEvent.click(screen.getByRole('button', { name: 'Actions' }));
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Cancel appointment' }));
     const dialog = await screen.findByRole('dialog');

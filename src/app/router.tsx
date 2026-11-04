@@ -2,12 +2,11 @@ import { lazy, Suspense, type ComponentType, type ReactNode } from 'react';
 import { createBrowserRouter, Navigate, Outlet, useLocation, type RouteObject } from 'react-router-dom';
 import { ErrorState, FullPageSpinner } from '@/components/feedback/States';
 import { useAuth } from '@/features/auth/AuthProvider';
-import { ForgotPasswordPage, SetPasswordPage, SignInPage, SignUpPage } from '@/features/auth/pages';
-import { ClinicProvider, useClinicGate } from '@/features/clinic/ClinicProvider';
-import { ClinicPickerScreen, InvitationScreen, SuspendedScreen } from '@/features/clinic/GateScreens';
-import { OnboardingPage } from '@/features/clinic/OnboardingPage';
+import { ForgotPasswordPage, SetPasswordPage, SignInPage } from '@/features/auth/pages';
+import { AccessProvider, useAccessGate } from '@/features/access/AccessProvider';
+import { NoAccessScreen } from '@/features/access/GateScreens';
 import { RequirePermission } from '@/lib/permissions/Guards';
-import { CAN_VIEW_PATIENTS, CAN_VIEW_PRESCRIPTIONS, CAN_VIEW_SCHEDULE, type PermissionRequirement } from '@/lib/permissions/permissions';
+import { REQUIRES as R, type PermissionRequirement } from '@/lib/permissions/permissions';
 import { toUserMessage } from '@/lib/errors';
 import { AppShell } from './layouts/AppShell';
 import { NotFoundPage, RouteErrorBoundary } from './RouteErrors';
@@ -35,18 +34,16 @@ function RequireAuth() {
   return <Outlet />;
 }
 
-function ClinicGate() {
-  const gate = useClinicGate();
+/** Resolves the user's account, permissions and branches before any app screen renders. */
+function AccessGate() {
+  const gate = useAccessGate();
   if (gate.status === 'loading') return <FullPageSpinner />;
   if (gate.status === 'error') return <ErrorState message={toUserMessage(gate.error)} onRetry={gate.retry} />;
-  if (gate.status === 'no_membership') return <OnboardingPage />;
-  if (gate.status === 'pick_clinic') return <ClinicPickerScreen memberships={gate.memberships} choose={gate.choose} />;
-  if (gate.status === 'invitation') return <InvitationScreen membership={gate.membership} others={gate.others} choose={gate.choose} />;
-  if (gate.status === 'suspended') return <SuspendedScreen membership={gate.membership} others={gate.others} choose={gate.choose} />;
+  if (gate.status === 'no_access') return <NoAccessScreen reason={gate.reason} />;
   return (
-    <ClinicProvider value={gate.value}>
+    <AccessProvider value={gate.value}>
       <Outlet />
-    </ClinicProvider>
+    </AccessProvider>
   );
 }
 
@@ -56,46 +53,57 @@ const appRoutes: RouteObject[] = [
   {
     path: 'patients',
     children: [
-      { index: true, element: guarded(CAN_VIEW_PATIENTS, page(() => import('@/features/patients/PatientsPage'), 'PatientsPage')) },
-      { path: ':patientId', element: guarded(CAN_VIEW_PATIENTS, page(() => import('@/features/patients/PatientDetailPage'), 'PatientDetailPage')) },
+      { index: true, element: guarded(R.viewPatients, page(() => import('@/features/patients/PatientsPage'), 'PatientsPage')) },
+      { path: ':patientId', element: guarded(R.viewPatients, page(() => import('@/features/patients/PatientDetailPage'), 'PatientDetailPage')) },
     ],
   },
   {
     path: 'appointments',
     children: [
-      { index: true, element: guarded(CAN_VIEW_SCHEDULE, page(() => import('@/features/appointments/AppointmentsPage'), 'AppointmentsPage')) },
-      { path: ':appointmentId', element: guarded(CAN_VIEW_SCHEDULE, page(() => import('@/features/appointments/AppointmentDetailPage'), 'AppointmentDetailPage')) },
+      { index: true, element: guarded(R.viewSchedule, page(() => import('@/features/appointments/AppointmentsPage'), 'AppointmentsPage')) },
+      { path: ':appointmentId', element: guarded(R.viewSchedule, page(() => import('@/features/appointments/AppointmentDetailPage'), 'AppointmentDetailPage')) },
     ],
   },
   {
     path: 'consultations',
     children: [
-      { index: true, element: guarded('clinical.write', page(() => import('@/features/consultations/ConsultationsPage'), 'ConsultationsPage')) },
-      { path: 'new', element: guarded('clinical.write', page(() => import('@/features/consultations/ConsultationEditorPage'), 'ConsultationEditorPage')) },
-      { path: ':consultationId', element: guarded(['clinical.read_all', 'clinical.read_assigned'], page(() => import('@/features/consultations/ConsultationEditorPage'), 'ConsultationEditorPage')) },
+      { index: true, element: guarded(R.viewConsultations, page(() => import('@/features/consultations/ConsultationsPage'), 'ConsultationsPage')) },
+      { path: 'new', element: guarded(R.writeConsultations, page(() => import('@/features/consultations/ConsultationEditorPage'), 'ConsultationEditorPage')) },
+      { path: ':consultationId', element: guarded(R.viewConsultations, page(() => import('@/features/consultations/ConsultationEditorPage'), 'ConsultationEditorPage')) },
     ],
   },
+  { path: 'examinations', element: guarded(R.viewExaminations, page(() => import('@/features/consultations/ConsultationsPage'), 'ExaminationsPage')) },
   {
     path: 'prescriptions',
     children: [
-      { index: true, element: guarded(CAN_VIEW_PRESCRIPTIONS, page(() => import('@/features/prescriptions/PrescriptionsPage'), 'PrescriptionsPage')) },
-      { path: 'new', element: guarded('clinical.write', page(() => import('@/features/prescriptions/PrescriptionEditorPage'), 'PrescriptionEditorPage')) },
-      { path: ':prescriptionId', element: guarded(CAN_VIEW_PRESCRIPTIONS, page(() => import('@/features/prescriptions/PrescriptionEditorPage'), 'PrescriptionEditorPage')) },
+      { index: true, element: guarded(R.viewPrescriptions, page(() => import('@/features/prescriptions/PrescriptionsPage'), 'PrescriptionsPage')) },
+      { path: 'new', element: guarded(R.createPrescription, page(() => import('@/features/prescriptions/PrescriptionEditorPage'), 'PrescriptionEditorPage')) },
+      { path: ':prescriptionId', element: guarded(R.viewPrescriptions, page(() => import('@/features/prescriptions/PrescriptionEditorPage'), 'PrescriptionEditorPage')) },
     ],
   },
+  { path: 'investigations', element: guarded(R.viewInvestigations, page(() => import('@/features/investigations/InvestigationsPage'), 'InvestigationsPage')) },
+  { path: 'follow-ups', element: guarded(R.viewFollowUps, page(() => import('@/features/follow-ups/FollowUpsPage'), 'FollowUpsPage')) },
   {
     path: 'billing',
     children: [
-      { index: true, element: guarded('billing.read', page(() => import('@/features/billing/InvoicesPage'), 'InvoicesPage')) },
-      { path: 'payments', element: guarded('billing.read', page(() => import('@/features/billing/PaymentsPage'), 'PaymentsPage')) },
+      { index: true, element: guarded(R.viewBilling, page(() => import('@/features/billing/InvoicesPage'), 'InvoicesPage')) },
+      { path: 'payments', element: guarded(R.viewBilling, page(() => import('@/features/billing/PaymentsPage'), 'PaymentsPage')) },
       { path: 'new', element: guarded('billing.create', page(() => import('@/features/billing/CreateInvoicePage'), 'CreateInvoicePage')) },
-      { path: ':invoiceId', element: guarded('billing.read', page(() => import('@/features/billing/InvoiceDetailPage'), 'InvoiceDetailPage')) },
+      { path: ':invoiceId', element: guarded(R.viewBilling, page(() => import('@/features/billing/InvoiceDetailPage'), 'InvoiceDetailPage')) },
     ],
   },
-  { path: 'reports', element: guarded('reports.read', page(() => import('@/features/reports/ReportsPage'), 'ReportsPage')) },
-  { path: 'staff', element: guarded(['users.read', 'users.manage'], page(() => import('@/features/users/StaffPage'), 'StaffPage')) },
-  { path: 'settings', element: guarded('settings.manage', page(() => import('@/features/clinic-settings/SettingsPage'), 'SettingsPage')) },
-  { path: 'audit', element: guarded('audit.read', page(() => import('@/features/audit-logs/AuditLogPage'), 'AuditLogPage')) },
+  { path: 'reports', element: guarded(R.viewReports, page(() => import('@/features/reports/ReportsPage'), 'ReportsPage')) },
+  { path: 'branches', element: guarded(R.manageBranches, page(() => import('@/features/branches/BranchesPage'), 'BranchesPage')) },
+  {
+    path: 'staff',
+    children: [
+      { index: true, element: guarded(R.manageStaff, page(() => import('@/features/staff/StaffPage'), 'StaffPage')) },
+      { path: ':staffId', element: guarded(R.manageStaff, page(() => import('@/features/staff/StaffDetailPage'), 'StaffDetailPage')) },
+    ],
+  },
+  { path: 'roles', element: guarded(R.managePermissions, page(() => import('@/features/staff/RolesPage'), 'RolesPage')) },
+  { path: 'settings', element: guarded(R.manageSettings, page(() => import('@/features/clinic-settings/SettingsPage'), 'SettingsPage')) },
+  { path: 'audit', element: guarded(R.viewAuditLogs, page(() => import('@/features/audit-logs/AuditLogPage'), 'AuditLogPage')) },
   { path: '*', element: <NotFoundPage /> },
 ];
 
@@ -104,7 +112,6 @@ export const routes: RouteObject[] = [
     errorElement: <RouteErrorBoundary />,
     children: [
       { path: '/auth/sign-in', element: <SignInPage /> },
-      { path: '/auth/sign-up', element: <SignUpPage /> },
       { path: '/auth/forgot', element: <ForgotPasswordPage /> },
       // Dev-only component gallery; tree-shaken from production builds.
       ...(import.meta.env.DEV
@@ -118,15 +125,15 @@ export const routes: RouteObject[] = [
         children: [
           { path: '/auth/set-password', element: <SetPasswordPage /> },
           {
-            element: <ClinicGate />,
+            element: <AccessGate />,
             children: [
               // Print views render without the app chrome.
               {
                 path: '/print/prescriptions/:prescriptionId',
-                element: guarded(CAN_VIEW_PRESCRIPTIONS, page(() => import('@/features/prescriptions/PrescriptionPrintPage'), 'PrescriptionPrintPage')),
+                element: guarded(['prescriptions.print', 'prescriptions.create'], page(() => import('@/features/prescriptions/PrescriptionPrintPage'), 'PrescriptionPrintPage')),
               },
-              { path: '/print/invoices/:invoiceId', element: guarded('billing.read', page(() => import('@/features/billing/InvoicePrintPage'), 'InvoicePrintPage')) },
-              { path: '/print/receipts/:paymentId', element: guarded('billing.read', page(() => import('@/features/billing/ReceiptPrintPage'), 'ReceiptPrintPage')) },
+              { path: '/print/invoices/:invoiceId', element: guarded(R.viewBilling, page(() => import('@/features/billing/InvoicePrintPage'), 'InvoicePrintPage')) },
+              { path: '/print/receipts/:paymentId', element: guarded(R.viewBilling, page(() => import('@/features/billing/ReceiptPrintPage'), 'ReceiptPrintPage')) },
               { path: '/', element: <AppShell />, children: appRoutes },
             ],
           },

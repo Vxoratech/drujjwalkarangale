@@ -2,29 +2,31 @@ import { getSupabase } from '@/lib/supabase/client';
 import type { PaymentWithContext, Invoice, InvoiceDetail, InvoiceItemType, InvoiceStatus, Page, Paise, PaymentMethod, Timestamp, UUID } from '@/types/domain';
 import { unwrap, unwrapPage } from './_helpers';
 
-const LIST = 'id, clinic_id, patient_id, appointment_id, invoice_no, status, issue_date, subtotal_paise, tax_paise, discount_paise, total_paise, amount_paid_paise, amount_refunded_paise, notes, void_reason, created_at, patient:patients(id, first_name, last_name, patient_code, phone)';
+const LIST = 'id, branch_id, patient_id, appointment_id, invoice_no, status, issue_date, subtotal_paise, tax_paise, discount_paise, total_paise, amount_paid_paise, amount_refunded_paise, notes, void_reason, created_at, patient:patients(id, first_name, last_name, patient_code, phone)';
 
 export interface InvoiceListParams {
   page: number;
   pageSize: number;
   status?: InvoiceStatus | 'outstanding';
   patientId?: UUID;
+  branchId?: UUID | null;
   search?: string;
 }
 
-export async function listInvoices(clinicId: UUID, params: InvoiceListParams): Promise<Page<Invoice>> {
-  let q = getSupabase().from('invoices').select(LIST, { count: 'exact' }).eq('clinic_id', clinicId);
+export async function listInvoices(params: InvoiceListParams): Promise<Page<Invoice>> {
+  let q = getSupabase().from('invoices').select(LIST, { count: 'exact' });
   if (params.status === 'outstanding') q = q.in('status', ['issued', 'partially_paid']);
   else if (params.status) q = q.eq('status', params.status);
   if (params.patientId) q = q.eq('patient_id', params.patientId);
+  if (params.branchId) q = q.eq('branch_id', params.branchId);
   if (params.search) q = q.ilike('invoice_no', `%${params.search.replace(/[%_]/g, '')}%`);
   const from = (params.page - 1) * params.pageSize;
   return unwrapPage<Invoice>(await q.order('issue_date', { ascending: false }).order('created_at', { ascending: false }).range(from, from + params.pageSize - 1));
 }
 
-export async function getInvoice(clinicId: UUID, id: UUID): Promise<InvoiceDetail> {
+export async function getInvoice(id: UUID): Promise<InvoiceDetail> {
   const inv = unwrap<InvoiceDetail>(
-    await getSupabase().from('invoices').select(`${LIST}, items:invoice_items(*), payments(*), refunds(*)`).eq('clinic_id', clinicId).eq('id', id).single(),
+    await getSupabase().from('invoices').select(`${LIST}, items:invoice_items(*), payments(*), refunds(*)`).eq('id', id).single(),
   );
   return {
     ...inv,
@@ -43,17 +45,16 @@ export interface InvoiceLineInput {
 }
 
 export async function createInvoice(
-  clinicId: UUID,
-  input: { patientId: UUID; items: InvoiceLineInput[]; discountPaise: Paise; notes: string | null; appointmentId?: UUID | null; idempotencyKey: UUID },
+  input: { patientId: UUID; branchId: UUID | null; items: InvoiceLineInput[]; discountPaise: Paise; notes: string | null; appointmentId?: UUID | null; idempotencyKey: UUID },
 ): Promise<Invoice> {
   return unwrap<Invoice>(
     await getSupabase().rpc('create_invoice', {
-      p_clinic: clinicId,
       p_patient: input.patientId,
       p_items: input.items,
       p_discount_paise: input.discountPaise,
       p_notes: input.notes,
       p_appointment: input.appointmentId ?? null,
+      p_branch: input.branchId,
       p_idempotency_key: input.idempotencyKey,
     }),
   );
@@ -136,11 +137,11 @@ export interface PaymentListParams {
 }
 
 /** Payment history across invoices (RLS limits rows to the caller's billing scope). */
-export async function listPayments(clinicId: UUID, params: PaymentListParams): Promise<Page<PaymentWithContext>> {
+export async function listPayments(params: PaymentListParams): Promise<Page<PaymentWithContext>> {
   let q = getSupabase()
     .from('payments')
     .select('*, invoice:invoices(id, invoice_no), patient:patients(id, first_name, last_name, patient_code)', { count: 'exact' })
-    .eq('clinic_id', clinicId);
+    ;
   if (params.from) q = q.gte('paid_at', params.from);
   if (params.to) q = q.lt('paid_at', params.to);
   if (params.method) q = q.eq('method', params.method);
@@ -150,9 +151,9 @@ export async function listPayments(clinicId: UUID, params: PaymentListParams): P
   return unwrapPage<PaymentWithContext>(await q.order('paid_at', { ascending: false }).range(from, from + params.pageSize - 1));
 }
 
-export async function getPayment(clinicId: UUID, id: UUID): Promise<PaymentWithContext> {
+export async function getPayment(id: UUID): Promise<PaymentWithContext> {
   return unwrap<PaymentWithContext>(
-    await getSupabase().from('payments').select('*, invoice:invoices(id, invoice_no), patient:patients(id, first_name, last_name, patient_code)').eq('clinic_id', clinicId).eq('id', id).single(),
+    await getSupabase().from('payments').select('*, invoice:invoices(id, invoice_no), patient:patients(id, first_name, last_name, patient_code)').eq('id', id).single(),
   );
 }
 

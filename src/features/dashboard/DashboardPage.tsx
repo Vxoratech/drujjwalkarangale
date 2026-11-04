@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { CalendarDays, IndianRupee, Plus, Receipt, UserPlus, UsersRound } from 'lucide-react';
+import { CalendarDays, Plus, UserPlus, UsersRound } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { PatientIdentity } from '@/components/data-display/Avatar';
 import { EmptyState, ErrorState, SkeletonRows } from '@/components/feedback/States';
@@ -7,15 +7,13 @@ import { StatusBadge } from '@/components/ui/Badge';
 import { buttonClasses } from '@/components/ui/Button';
 import { Card, CardHeader, StatCard } from '@/components/ui/Card';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { useCurrentUser } from '@/features/auth/AuthProvider';
-import { useClinic } from '@/features/clinic/ClinicProvider';
+import { useAccess } from '@/features/access/AccessProvider';
 import { FollowUpsCard } from '@/features/follow-ups/FollowUpsCard';
-import { useDoctors } from '@/hooks/useDoctors';
-import { formatINR, formatLongDate, formatNumber, formatTime, fullName, getDisplayTimeZone, istDayRange, todayISO } from '@/lib/formatters';
+import { formatLongDate, formatNumber, formatTime, fullName, getDisplayTimeZone, istDayRange, todayISO } from '@/lib/formatters';
 import { qk } from '@/lib/query/keys';
 import { useI18n } from '@/locales/i18n';
 import { listAppointments } from '@/services/appointments';
-import { fetchDashboardSummary } from '@/services/reports';
+import { fetchOverview } from '@/services/reports';
 import { AdminOverview } from './AdminOverview';
 import { DoctorWorkspace } from './DoctorWorkspace';
 
@@ -26,14 +24,14 @@ function greetingKey(): 'dashboard.greetingMorning' | 'dashboard.greetingAfterno
   return 'dashboard.greetingEvening';
 }
 
-/** Today's clinic schedule — for staff who manage appointments. */
+/** Today's schedule at the user's branches (or the filtered branch). */
 function ClinicSchedule() {
   const { t } = useI18n();
-  const { clinicId } = useClinic();
-  const { names } = useDoctors();
+  const { branches, branchFilter, branchName } = useAccess();
+  const showBranch = branches.length > 1 && !branchFilter;
   const today = todayISO();
   const range = istDayRange(today);
-  const schedule = useQuery({ queryKey: qk.appointments(clinicId, { day: today }), queryFn: () => listAppointments(clinicId, { from: range.from, to: range.to }) });
+  const schedule = useQuery({ queryKey: qk.appointments({ day: today, branchId: branchFilter }), queryFn: () => listAppointments({ from: range.from, to: range.to, branchId: branchFilter }) });
   return (
     <Card>
       <CardHeader
@@ -56,7 +54,7 @@ function ClinicSchedule() {
             <li key={a.id}>
               <Link to={`/appointments/${a.id}`} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3 hover:bg-ivory sm:flex-nowrap">
                 <span className="tabular w-20 shrink-0 text-sm font-medium text-ink">{formatTime(a.starts_at)}</span>
-                <PatientIdentity className="min-w-0 flex-1" name={fullName(a.patient)} code={a.patient?.patient_code} meta={`${t(`appointmentType.${a.type}`)} · ${names.get(a.doctor_id) ?? ''}`} />
+                <PatientIdentity className="min-w-0 flex-1" name={fullName(a.patient)} code={a.patient?.patient_code} meta={[t(`appointmentType.${a.type}`), showBranch ? branchName(a.branch_id) : null].filter(Boolean).join(' · ')} />
                 <StatusBadge status={a.status} label={t(`appointmentStatus.${a.status}`)} />
               </Link>
             </li>
@@ -67,29 +65,29 @@ function ClinicSchedule() {
   );
 }
 
-/** Small summary for roles without reports (e.g. receptionist): RLS-scoped counts. */
+/** Front-desk summary for staff with operational reports only (branch-scoped server-side). */
 function BasicSummary() {
   const { t } = useI18n();
-  const { clinicId, can } = useClinic();
-  const summary = useQuery({ queryKey: qk.dashboard(clinicId), queryFn: () => fetchDashboardSummary(clinicId) });
+  const { branchFilter } = useAccess();
+  const today = todayISO();
+  const summary = useQuery({ queryKey: qk.dashboard({ branchFilter }), queryFn: () => fetchOverview(branchFilter, today, today) });
   const s = summary.data;
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <StatCard label={t('dashboard.todayAppointments')} value={formatNumber(s?.appointments_today ?? 0)} hint={t('dashboard.remaining', { count: s?.appointments_remaining_today ?? 0 })} icon={<CalendarDays />} loading={summary.isLoading} />
       <StatCard label={t('dashboard.totalPatients')} value={formatNumber(s?.patients_total ?? 0)} icon={<UsersRound />} loading={summary.isLoading} />
-      {can('billing.read') && <StatCard label={t('dashboard.collectedThisMonth')} value={formatINR(s?.collected_this_month_paise, { whole: true })} icon={<IndianRupee />} accent="gold" loading={summary.isLoading} />}
-      {can('billing.read') && <StatCard label={t('dashboard.outstanding')} value={formatINR(s?.outstanding_paise, { whole: true })} icon={<Receipt />} accent="warning" loading={summary.isLoading} />}
+      <StatCard label={t('dashboard.followUpsPending')} value={formatNumber(s?.follow_ups_pending ?? 0)} hint={t('dashboard.overdueCount', { count: s?.follow_ups_overdue ?? 0 })} icon={<CalendarDays />} accent="gold" loading={summary.isLoading} />
     </div>
   );
 }
 
 export function DashboardPage() {
   const { t } = useI18n();
-  const user = useCurrentUser();
-  const { can } = useClinic();
-  const firstName = ((user.user_metadata.full_name as string | undefined) ?? '').split(' ').slice(0, 2).join(' ');
-  const isClinician = can('clinical.write');
-  const isManager = can('reports.read');
+  const { can, account, fullName: name } = useAccess();
+  const firstName = name.split(' ').slice(0, 2).join(' ');
+  const isDoctor = account === 'primary_doctor';
+  // Admins and staff with financial or branch reports get the full overview.
+  const isManager = !isDoctor && (account === 'admin' || can('reports.financial'));
 
   return (
     <>
@@ -103,7 +101,7 @@ export function DashboardPage() {
                 <UserPlus className="size-4" aria-hidden /> {t('patients.add')}
               </Link>
             )}
-            {can('appointments.manage') && (
+            {can('appointments.create') && (
               <Link to="/appointments?book=1" className={buttonClasses('primary')}>
                 <Plus className="size-4" aria-hidden /> {t('appointments.book')}
               </Link>
@@ -112,16 +110,22 @@ export function DashboardPage() {
         }
       />
       <div className="space-y-10">
-        {isClinician && <DoctorWorkspace />}
-        {isManager && <AdminOverview />}
-        {!isClinician && !isManager && <BasicSummary />}
-        {can('appointments.read_all') && (
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-            <ClinicSchedule />
+        {isDoctor ? (
+          <>
+            <DoctorWorkspace />
             <FollowUpsCard />
-          </div>
+          </>
+        ) : (
+          <>
+            {isManager ? <AdminOverview /> : can('reports.operational') && <BasicSummary />}
+            {(can('appointments.view') || can('follow_ups.view')) && (
+              <div className="grid gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+                {can('appointments.view') && <ClinicSchedule />}
+                {can('follow_ups.view') && <FollowUpsCard />}
+              </div>
+            )}
+          </>
         )}
-        {isClinician && !can('appointments.read_all') && <FollowUpsCard />}
       </div>
     </>
   );

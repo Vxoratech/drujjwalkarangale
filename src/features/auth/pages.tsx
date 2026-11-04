@@ -11,10 +11,10 @@ import { FormField } from '@/components/forms/FormField';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { toUserMessage } from '@/lib/errors';
-import { setPasswordSchema, signInSchema, signUpSchema } from '@/lib/validation/schemas';
+import { setPasswordSchema, signInSchema } from '@/lib/validation/schemas';
 import { useFieldError } from '@/lib/validation/useFieldError';
 import { useI18n } from '@/locales/i18n';
-import { consumeSessionExpired, requestPasswordReset, signIn, signUp, updatePassword } from '@/services/auth';
+import { consumeSessionExpired, requestPasswordReset, signIn, updatePassword } from '@/services/auth';
 import { useAuth } from './AuthProvider';
 
 const PasswordInput = forwardRef<HTMLInputElement, ComponentProps<typeof Input>>(function PasswordInput(props, ref) {
@@ -59,14 +59,7 @@ export function SignInPage() {
     <AuthLayout
       title={t('auth.signInTitle')}
       subtitle={t('auth.signInSubtitle')}
-      footer={
-        <>
-          {t('auth.noAccount')}{' '}
-          <Link to="/auth/sign-up" className="font-medium text-forest hover:underline">
-            {t('auth.createAccount')}
-          </Link>
-        </>
-      }
+      footer={t('auth.inviteOnly')}
     >
       <form onSubmit={onSubmit} noValidate className="space-y-4">
         {expired && !formError && <Alert tone="warning">{t('common.signedOutExpired')}</Alert>}
@@ -84,52 +77,6 @@ export function SignInPage() {
         </div>
         <Button type="submit" fullWidth size="lg" loading={form.formState.isSubmitting}>
           {form.formState.isSubmitting ? t('auth.signingIn') : t('auth.signIn')}
-        </Button>
-      </form>
-    </AuthLayout>
-  );
-}
-
-export function SignUpPage() {
-  const { t } = useI18n();
-  const fieldError = useFieldError();
-  const navigate = useNavigate();
-  const [message, setMessage] = useState<{ tone: 'danger' | 'success'; text: string } | null>(null);
-  const form = useForm<z.infer<typeof signUpSchema>>({ resolver: zodResolver(signUpSchema), defaultValues: { fullName: '', email: '', password: '' } });
-
-  const onSubmit = form.handleSubmit(async (values) => {
-    setMessage(null);
-    try {
-      const { needsConfirmation } = await signUp(values.email, values.password, values.fullName);
-      if (needsConfirmation) setMessage({ tone: 'success', text: t('auth.checkEmail') });
-      else navigate('/onboarding');
-    } catch (error) {
-      setMessage({ tone: 'danger', text: toUserMessage(error) });
-    }
-  });
-
-  return (
-    <AuthLayout
-      title={t('auth.signUpTitle')}
-      footer={
-        <Link to="/auth/sign-in" className="font-medium text-forest hover:underline">
-          {t('auth.backToSignIn')}
-        </Link>
-      }
-    >
-      <form onSubmit={onSubmit} noValidate className="space-y-4">
-        {message && <Alert tone={message.tone}>{message.text}</Alert>}
-        <FormField label={t('auth.fullName')} error={fieldError(form.formState.errors.fullName)} required>
-          <Input autoComplete="name" {...form.register('fullName')} />
-        </FormField>
-        <FormField label={t('auth.email')} error={fieldError(form.formState.errors.email)} required>
-          <Input type="email" autoComplete="email" {...form.register('email')} />
-        </FormField>
-        <FormField label={t('auth.password')} hint={t('auth.passwordHint')} error={form.formState.errors.password ? t('auth.passwordHint') : undefined} required>
-          <PasswordInput autoComplete="new-password" {...form.register('password')} />
-        </FormField>
-        <Button type="submit" fullWidth size="lg" loading={form.formState.isSubmitting}>
-          {t('auth.signUp')}
         </Button>
       </form>
     </AuthLayout>

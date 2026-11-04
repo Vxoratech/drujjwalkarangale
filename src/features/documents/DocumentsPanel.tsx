@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Button, IconButton } from '@/components/ui/Button';
 import { ConfirmDialog, Modal } from '@/components/ui/Dialog';
 import { Input, Select, Textarea } from '@/components/ui/Input';
-import { useClinic } from '@/features/clinic/ClinicProvider';
+import { useAccess } from '@/features/access/AccessProvider';
 import { formatDate } from '@/lib/formatters';
 import { useI18n } from '@/locales/i18n';
 import { deleteDocument, getDocumentUrl, listDocuments, uploadDocument } from '@/services/documents';
@@ -33,7 +33,7 @@ export function UploadDocumentDialog({
   defaultTitle?: string;
 }) {
   const { t } = useI18n();
-  const { clinicId } = useClinic();
+  const { defaultBranchId } = useAccess();
   const queryClient = useQueryClient();
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState(defaultTitle);
@@ -43,11 +43,12 @@ export function UploadDocumentDialog({
   const mutation = useMutation({
     mutationFn: () => {
       setProgress(0);
-      return uploadDocument(clinicId, { patientId, file: file!, title: title.trim() || file!.name, category, investigationId, consultationId }, setProgress);
+      // With a consultation the server files the document under that visit's branch.
+      return uploadDocument({ patientId, branchId: consultationId ? null : defaultBranchId, file: file!, title: title.trim() || file!.name, category, investigationId, consultationId }, setProgress);
     },
     onSuccess: async () => {
       notify.success(t('documents.uploaded'));
-      await queryClient.invalidateQueries({ queryKey: [clinicId, 'documents'] });
+      await queryClient.invalidateQueries({ queryKey: ['documents'] });
       setFile(null);
       setProgress(null);
       onOpenChange(false);
@@ -117,22 +118,22 @@ export function useOpenDocument() {
   };
 }
 
-export function DocumentsPanel({ patientId, canWrite }: { patientId: UUID; canWrite: boolean }) {
+export function DocumentsPanel({ patientId, consultationId, canWrite }: { patientId: UUID; consultationId?: UUID; canWrite: boolean }) {
   const { t } = useI18n();
-  const { clinicId } = useClinic();
+  const { can } = useAccess();
   const queryClient = useQueryClient();
   const openDocument = useOpenDocument();
   const [uploading, setUploading] = useState(false);
   const [removing, setRemoving] = useState<PatientDocument | null>(null);
   const [reason, setReason] = useState('');
-  const query = useQuery({ queryKey: [clinicId, 'documents', patientId], queryFn: () => listDocuments(clinicId, { patientId }) });
+  const query = useQuery({ queryKey: ['documents', patientId], queryFn: () => listDocuments({ patientId }) });
 
   const remove = useMutation({
     mutationFn: () => deleteDocument(removing!.id, reason),
     onSuccess: async () => {
       notify.success(t('documents.removed'));
       setReason('');
-      await queryClient.invalidateQueries({ queryKey: [clinicId, 'documents'] });
+      await queryClient.invalidateQueries({ queryKey: ['documents'] });
     },
     onError: (e) => notify.error(e),
   });
@@ -171,13 +172,13 @@ export function DocumentsPanel({ patientId, canWrite }: { patientId: UUID; canWr
                 <Button size="sm" variant="ghost" leftIcon={<ExternalLink className="size-4" />} onClick={() => void openDocument(d)}>
                   {t('common.download')}
                 </Button>
-                {canWrite && <IconButton size="sm" label={`${t('documents.remove')}: ${d.title}`} icon={<Trash2 />} onClick={() => setRemoving(d)} />}
+                {can('documents.delete') && <IconButton size="sm" label={`${t('documents.remove')}: ${d.title}`} icon={<Trash2 />} onClick={() => setRemoving(d)} />}
               </div>
             </li>
           ))}
         </ul>
       )}
-      {canWrite && <UploadDocumentDialog open={uploading} onOpenChange={setUploading} patientId={patientId} />}
+      {canWrite && <UploadDocumentDialog open={uploading} onOpenChange={setUploading} patientId={patientId} consultationId={consultationId} />}
       <ConfirmDialog
         open={Boolean(removing)}
         onOpenChange={(o) => {

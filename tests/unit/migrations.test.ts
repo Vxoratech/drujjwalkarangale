@@ -10,11 +10,8 @@ import { describe, expect, it } from 'vitest';
 const dir = join(import.meta.dirname, '../../supabase/migrations');
 const files = readdirSync(dir).filter((f) => f.endsWith('.sql')).sort();
 
-/** Reviewed destructive changes: data was migrated before the drop. */
-const ALLOWED_DESTRUCTIVE = [
-  '20261026000900_patients_consents_appointments.sql: alter table public.patients drop column archived_at;',
-  '20261026001000_clinical_records.sql: drop column result_file_path;',
-];
+/** Reviewed destructive changes (none since the single-organization baseline of 03/11/2026). */
+const ALLOWED_DESTRUCTIVE: string[] = [];
 
 describe('migrations', () => {
   it('are named consistently and ordered by timestamp', () => {

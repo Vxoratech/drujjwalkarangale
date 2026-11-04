@@ -13,7 +13,7 @@ import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { ConfirmDialog, Modal } from '@/components/ui/Dialog';
 import { DateInput, Input, Select, Textarea } from '@/components/ui/Input';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { useClinic } from '@/features/clinic/ClinicProvider';
+import { useAccess } from '@/features/access/AccessProvider';
 import { isPermissionError, toUserMessage } from '@/lib/errors';
 import { formatDate, formatDateTime, formatINR, fullName, paiseToRupees, todayISO } from '@/lib/formatters';
 import { qk } from '@/lib/query/keys';
@@ -27,7 +27,7 @@ import { InvoiceStatusBadge } from './InvoiceStatusBadge';
 
 function PaymentModal({ invoice, open, onOpenChange }: { invoice: InvoiceDetail; open: boolean; onOpenChange: (o: boolean) => void }) {
   const { t } = useI18n();
-  const { clinicId } = useClinic();
+  
   const queryClient = useQueryClient();
   const fieldError = useFieldError();
   const balance = invoice.total_paise - invoice.amount_paid_paise;
@@ -47,9 +47,9 @@ function PaymentModal({ invoice, open, onOpenChange }: { invoice: InvoiceDetail;
       notify.success(t('billing.paymentRecorded'));
       idem.renew();
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: qk.invoice(clinicId, invoice.id) }),
-        queryClient.invalidateQueries({ queryKey: [clinicId, 'invoices'] }),
-        queryClient.invalidateQueries({ queryKey: [clinicId, 'dashboard'] }),
+        queryClient.invalidateQueries({ queryKey: qk.invoice(invoice.id) }),
+        queryClient.invalidateQueries({ queryKey: ['invoices'] }),
+        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
       ]);
       onOpenChange(false);
     },
@@ -99,7 +99,7 @@ function PaymentModal({ invoice, open, onOpenChange }: { invoice: InvoiceDetail;
 
 function RefundModal({ invoice, open, onOpenChange }: { invoice: InvoiceDetail; open: boolean; onOpenChange: (o: boolean) => void }) {
   const { t } = useI18n();
-  const { clinicId } = useClinic();
+  
   const queryClient = useQueryClient();
   const fieldError = useFieldError();
   const refundable = invoice.amount_paid_paise - invoice.amount_refunded_paise;
@@ -125,9 +125,9 @@ function RefundModal({ invoice, open, onOpenChange }: { invoice: InvoiceDetail; 
       notify.success(t('billing.refundRecorded'));
       idem.renew();
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: qk.invoice(clinicId, invoice.id) }),
-        queryClient.invalidateQueries({ queryKey: [clinicId, 'invoices'] }),
-        queryClient.invalidateQueries({ queryKey: [clinicId, 'dashboard'] }),
+        queryClient.invalidateQueries({ queryKey: qk.invoice(invoice.id) }),
+        queryClient.invalidateQueries({ queryKey: ['invoices'] }),
+        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
       ]);
       onOpenChange(false);
     },
@@ -181,19 +181,19 @@ function RefundModal({ invoice, open, onOpenChange }: { invoice: InvoiceDetail; 
 export function InvoiceDetailPage() {
   const { invoiceId = '' } = useParams();
   const { t } = useI18n();
-  const { clinicId, can } = useClinic();
+  const { can } = useAccess();
   const queryClient = useQueryClient();
   const [payOpen, setPayOpen] = useState(false);
   const [refundOpen, setRefundOpen] = useState(false);
   const [voidOpen, setVoidOpen] = useState(false);
   const [reason, setReason] = useState('');
-  const query = useQuery({ queryKey: qk.invoice(clinicId, invoiceId), queryFn: () => getInvoice(clinicId, invoiceId) });
+  const query = useQuery({ queryKey: qk.invoice(invoiceId), queryFn: () => getInvoice(invoiceId) });
 
   const voidMutation = useMutation({
     mutationFn: () => voidInvoice(invoiceId, reason),
     onSuccess: async () => {
       notify.success(t('billing.voided'));
-      await Promise.all([queryClient.invalidateQueries({ queryKey: qk.invoice(clinicId, invoiceId) }), queryClient.invalidateQueries({ queryKey: [clinicId, 'invoices'] })]);
+      await Promise.all([queryClient.invalidateQueries({ queryKey: qk.invoice(invoiceId) }), queryClient.invalidateQueries({ queryKey: ['invoices'] })]);
     },
     onError: (e) => notify.error(e),
   });

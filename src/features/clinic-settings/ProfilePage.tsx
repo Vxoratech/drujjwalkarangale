@@ -14,7 +14,7 @@ import { qk } from '@/lib/query/keys';
 import { optionalPhone, optionalText, requiredText } from '@/lib/validation/schemas';
 import { useFieldError } from '@/lib/validation/useFieldError';
 import { useI18n } from '@/locales/i18n';
-import { fetchProfile, updateProfile } from '@/services/clinic';
+import { fetchProfile, updateProfile } from '@/services/organization';
 
 const schema = z.object({
   full_name: requiredText(120, 2),

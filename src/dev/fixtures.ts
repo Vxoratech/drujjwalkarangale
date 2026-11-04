@@ -1,11 +1,11 @@
 /**
  * Fictional records for tests and the dev-only fixture pages. Never real people.
  */
-import type { Clinic, Consultation, Patient, Prescription, PrescriptionItem } from '@/types/domain';
+import type { Branch, Consultation, Organization, Patient, Prescription, PrescriptionItem } from '@/types/domain';
 
-export const fixtureClinic: Clinic = {
+export const fixtureOrganization: Organization = {
   id: '00000000-0000-4000-8000-000000000001',
-  name: 'Karangale Ayurveda Clinic (Demo)',
+  name: 'Dr. Ujjwal Karangale Ayurvedic Clinic (Demo)',
   legal_name: 'Karangale Ayurveda Wellness LLP (Demo)',
   phone: '+91 20 4000 1234',
   email: 'clinic@demo.vaidyora.test',
@@ -16,22 +16,27 @@ export const fixtureClinic: Clinic = {
   gstin: '27ABCDE1234F1Z5',
   registration_no: 'MH-AYU-0000 (Demo)',
   logo_path: null,
-  timezone: 'Asia/Kolkata',
-  currency: 'INR',
-  default_locale: 'en',
-  invoice_prefix: 'KAC',
-  consultation_fee_paise: 50000,
-  status: 'active',
-  status_reason: null,
-  brand_accent: null,
-  audit_retention_days: 2920,
-  settings: { demo: true },
+  primary_doctor_id: '00000000-0000-4000-8000-000000000201',
+};
+
+export const fixtureBranch: Branch = {
+  id: '00000000-0000-4000-8000-000000000011',
+  code: 'MAIN',
+  name: 'Main Clinic',
+  address_line: '12, Shanti Nagar, Kothrud',
+  city: 'Pune',
+  state: 'Maharashtra',
+  pincode: '411038',
+  phone: '+91 20 4000 1234',
+  email: null,
+  is_primary: true,
+  is_active: true,
+  manager_staff_id: null,
 };
 
 export const fixturePatient: Patient = {
   id: '00000000-0000-4000-8000-000000000101',
-  clinic_id: fixtureClinic.id,
-  branch_id: null,
+  registered_branch_id: fixtureBranch.id,
   patient_code: 'P-000001',
   first_name: 'Sunita',
   last_name: 'Pawar',
@@ -41,28 +46,22 @@ export const fixturePatient: Patient = {
   email: null,
   address_line: 'Flat 4, Sai Residency',
   city: 'Pune',
-  blood_group: 'B+',
-  allergies: 'Sulpha drugs',
-  chronic_conditions: 'Osteoarthritis (knees)',
   emergency_contact_name: null,
   emergency_contact_phone: null,
-  prakriti: 'vata_pitta',
-  assigned_doctor_id: '00000000-0000-4000-8000-000000000201',
   preferred_locale: 'mr',
   status: 'active',
   occupation: 'Teacher',
   approx_age_years: null,
   registered_on: '2026-09-01',
+  duplicate_reviewed: false,
   created_at: '2026-09-01T05:00:00Z',
 };
 
 export const fixtureConsultation: Consultation = {
   id: '00000000-0000-4000-8000-000000000301',
-  clinic_id: fixtureClinic.id,
   patient_id: fixturePatient.id,
-  doctor_id: '00000000-0000-4000-8000-000000000201',
   appointment_id: null,
-  branch_id: null,
+  branch_id: fixtureBranch.id,
   status: 'finalized',
   visit_date: '2026-10-22',
   chief_complaint: 'Bilateral knee pain for 3 months',
@@ -110,10 +109,9 @@ const medicines: [string, PrescriptionItem['form'], PrescriptionItem['route']][]
 export function fixturePrescription(language: 'en' | 'mr' = 'mr', count = medicines.length): Prescription {
   return {
     id: '00000000-0000-4000-8000-000000000401',
-    clinic_id: fixtureClinic.id,
     patient_id: fixturePatient.id,
-    doctor_id: '00000000-0000-4000-8000-000000000201',
     consultation_id: fixtureConsultation.id,
+    branch_id: fixtureBranch.id,
     prescription_no: 'RX-2026-000014',
     status: 'issued',
     notes: 'Internal note — must never print.',

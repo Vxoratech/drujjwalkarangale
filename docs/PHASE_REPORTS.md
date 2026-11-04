@@ -61,3 +61,16 @@ Reports in the Phase 14 format. The brief's numbered phases (1–13) map onto th
 | **Results** | 222 Vitest tests and 33 Playwright tests pass (5 skipped by design); build OK; production advisories reduced to React Router v7-only and zod 4-only items (mitigated, tracked) |
 | **Limitations** | See [RELEASE.md](RELEASE.md): blockers B1–B10 |
 | **Next** | Clear B1–B3 (minutes to hours), then a staging pilot with fictional data, then the legal review and region decision before real patients |
+
+---
+
+## Revision 2 — Single organization (03/11/2026)
+| | |
+| --- | --- |
+| **Brief** | Vaidyora is for Dr. Ujjwal Karangale only: one organization, many branches, one doctor, configurable staff; no clinic or doctor registration |
+| **Files** | `supabase/migrations/20261103000100–0500` (new baseline; 0001–0015 removed), `supabase/functions/staff-admin`, `scripts/bootstrap.ts`, `scripts/seed-demo.ts`, `src/features/access`, `src/features/staff`, `src/features/branches`, `src/app/navigation.ts`, all services and feature screens, `tests/db/access.test.ts`, `clinical-access.test.ts`, `workflows.test.ts`, `docs/ARCHITECTURE.md` |
+| **Done** | Organization singleton and write-once primary doctor; account types; 47 permission keys with doctor-only flag; role templates, per-staff grants/denies, branch assignments; permission evaluation and guards (no self-elevation, grant authority, staff linking); central patients with medical history split out and duplicate review; branch-aware visits, bills, documents, reports and audit; working hours; Admin, Doctor and staff dashboards with a branch filter; Staff Management (wizard, permission editor, history), Roles & Permissions, Branch Management; permission-filtered navigation and route guards; sign-up removed |
+| **Commands** | `npx vitest run`, `npx playwright test`, `npx tsc -b --noEmit`, `npx eslint src tests scripts e2e`, `npm run build`, `npm run docs:db`, `supabase db reset --linked`, `supabase db lint --linked` |
+| **Results** | 191 Vitest (60 DB, 131 unit) and 48 Playwright pass; hosted project reset to the new baseline, lint clean; anonymous API calls refused |
+| **Limitations** | Edge Functions not deployed; doctor not yet bound on the hosted project; public sign-up still enabled in the hosted Auth settings; signed-in screens not yet clicked through against the hosted backend; Marathi for new screens needs review |
+| **Next** | B1–B3 in [RELEASE.md](RELEASE.md), then a staging click-through with a test receptionist |

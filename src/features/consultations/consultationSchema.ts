@@ -143,12 +143,12 @@ const nul = <T,>(v: T | '' | undefined): T | null => (v === '' || v === undefine
 
 export function toConsultationPayload(
   v: ConsultationFormValues,
-  ctx: { patient_id: string; doctor_id: string; appointment_id: string | null },
+  ctx: { patient_id: string; branch_id: string; appointment_id: string | null },
 ): { input: ConsultationInput; exam: ExaminationInput } {
   return {
     input: {
       patient_id: ctx.patient_id,
-      doctor_id: ctx.doctor_id,
+      branch_id: ctx.branch_id,
       appointment_id: ctx.appointment_id,
       chief_complaint: v.chief_complaint,
       pain_details: nul(v.pain_details),

@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fixtureClinic, fixtureConsultation, fixtureDoctor, fixturePatient, fixturePrescription } from '@/dev/fixtures';
+import { fixtureBranch, fixtureConsultation, fixtureOrganization, fixtureDoctor, fixturePatient, fixturePrescription } from '@/dev/fixtures';
 import { PrescriptionDocument } from '@/features/prescriptions/PrescriptionDocument';
 import { PrescriptionEditorPage } from '@/features/prescriptions/PrescriptionEditorPage';
 import { I18nProvider } from '@/locales/i18n';
@@ -32,7 +32,7 @@ describe('prescription creation and issue', () => {
   it('saves the draft, then issues only after the clinician confirms the review', async () => {
     api.savePrescriptionDraft.mockResolvedValue('rx-1');
     api.issuePrescription.mockResolvedValue({});
-    renderRoute(<PrescriptionEditorPage />, { path: '/prescriptions/new', url: `/prescriptions/new?patient=${fixturePatient.id}`, permissions: DOCTOR_PERMISSIONS, roles: ['doctor'] });
+    renderRoute(<PrescriptionEditorPage />, { path: '/prescriptions/new', url: `/prescriptions/new?patient=${fixturePatient.id}`, permissions: DOCTOR_PERMISSIONS, account: 'primary_doctor' });
 
     // Wait for the one-time prefill (patient prefers Marathi) before typing.
     await waitFor(() => expect(screen.getByLabelText(/Print language/)).toHaveValue('mr'));
@@ -49,14 +49,14 @@ describe('prescription creation and issue', () => {
     await userEvent.click(issue);
 
     await waitFor(() => expect(api.issuePrescription).toHaveBeenCalledWith('rx-1', true));
-    const [, header, items] = api.savePrescriptionDraft.mock.calls[0]!;
-    // The patient prefers Marathi, so the prescription defaults to Marathi.
-    expect(header).toMatchObject({ patient_id: fixturePatient.id, header: { language: 'mr' } });
+    const [input, items] = api.savePrescriptionDraft.mock.calls[0]!;
+    // The patient prefers Marathi, so the prescription defaults to Marathi; it is filed at the current branch.
+    expect(input).toMatchObject({ patient_id: fixturePatient.id, header: { language: 'mr', branch_id: 'b-main' } });
     expect(items).toEqual([expect.objectContaining({ medicine_name: 'Yogaraj Guggulu', dose: '2 tablets', instructions_mr: 'जेवणानंतर', instructions_en: null })]);
   });
 
   it('does not save when required medicine fields are missing', async () => {
-    renderRoute(<PrescriptionEditorPage />, { path: '/prescriptions/new', url: `/prescriptions/new?patient=${fixturePatient.id}`, permissions: DOCTOR_PERMISSIONS, roles: ['doctor'] });
+    renderRoute(<PrescriptionEditorPage />, { path: '/prescriptions/new', url: `/prescriptions/new?patient=${fixturePatient.id}`, permissions: DOCTOR_PERMISSIONS, account: 'primary_doctor' });
     await userEvent.click(await screen.findByRole('button', { name: 'Save draft' }));
     expect((await screen.findAllByText('This field is required.')).length).toBeGreaterThanOrEqual(3);
     expect(api.savePrescriptionDraft).not.toHaveBeenCalled();
@@ -65,7 +65,7 @@ describe('prescription creation and issue', () => {
   it('an issued prescription is read-only and offers revision, which needs a reason', async () => {
     api.getPrescription.mockResolvedValue({ ...fixturePrescription('en', 2), revision_number: 1, revision_reason: null });
     api.revisePrescription.mockResolvedValue({});
-    renderRoute(<PrescriptionEditorPage />, { path: '/prescriptions/:prescriptionId', url: '/prescriptions/rx-1', permissions: DOCTOR_PERMISSIONS, roles: ['doctor'] });
+    renderRoute(<PrescriptionEditorPage />, { path: '/prescriptions/:prescriptionId', url: '/prescriptions/rx-1', permissions: DOCTOR_PERMISSIONS, account: 'primary_doctor' });
     await screen.findByRole('button', { name: 'Revise' });
     for (const input of screen.getAllByLabelText(/^Medicine/)) expect(input).toBeDisabled();
     await userEvent.click(screen.getByRole('button', { name: 'Revise' }));
@@ -82,7 +82,7 @@ describe('printed prescription', () => {
   const renderDoc = (language: 'en' | 'mr', uiLocale: 'en' | 'mr' = 'en') =>
     render(
       <I18nProvider defaultLocale={uiLocale}>
-        <PrescriptionDocument clinic={fixtureClinic} rx={fixturePrescription(language, 3)} patient={fixturePatient} doctor={fixtureDoctor} consultation={fixtureConsultation} />
+        <PrescriptionDocument organization={fixtureOrganization} branch={fixtureBranch} rx={fixturePrescription(language, 3)} patient={fixturePatient} doctor={fixtureDoctor} consultation={fixtureConsultation} />
       </I18nProvider>,
     );
 

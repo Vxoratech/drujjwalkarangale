@@ -9,22 +9,22 @@ import { Button, buttonClasses } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/Tabs';
-import { useClinic } from '@/features/clinic/ClinicProvider';
+import { useAccess } from '@/features/access/AccessProvider';
 import { InvestigationsPanel } from '@/features/investigations/InvestigationsPanel';
-import { useDoctors } from '@/hooks/useDoctors';
 import { isPermissionError, toUserMessage } from '@/lib/errors';
 import { ageLabel, formatDate, formatDateTime, formatINR, fullName } from '@/lib/formatters';
-import { CAN_VIEW_CLINICAL, CAN_VIEW_PRESCRIPTIONS } from '@/lib/permissions/permissions';
+import { REQUIRES } from '@/lib/permissions/permissions';
 import { qk } from '@/lib/query/keys';
 import { useI18n } from '@/locales/i18n';
 import { listPatientAppointments } from '@/services/appointments';
 import { listInvoices } from '@/services/billing';
 import { listConsultations, listFollowUps, listPrescriptions } from '@/services/clinical';
 import type { AyurvedicExamination } from '@/types/domain';
-import { viewPatient } from '@/services/patients';
+import { getMedicalProfile, viewPatient } from '@/services/patients';
 import { DocumentsPanel } from '@/features/documents/DocumentsPanel';
 import { ConsentsPanel } from './ConsentsPanel';
 import { PermissionDenied } from '@/components/feedback/States';
+import { MedicalProfileCard } from './MedicalProfileCard';
 import { PatientFormDrawer } from './PatientFormDrawer';
 
 function Detail({ label, children }: { label: string; children: ReactNode }) {
@@ -38,9 +38,8 @@ function Detail({ label, children }: { label: string; children: ReactNode }) {
 
 function VisitsTab({ patientId }: { patientId: string }) {
   const { t } = useI18n();
-  const { clinicId } = useClinic();
-  const { names } = useDoctors();
-  const q = useQuery({ queryKey: qk.consultations(clinicId, { patientId }), queryFn: () => listConsultations(clinicId, { patientId }) });
+  const { branchName } = useAccess();
+  const q = useQuery({ queryKey: qk.consultations({ patientId }), queryFn: () => listConsultations({ patientId }) });
   if (q.isLoading) return <SkeletonRows rows={3} />;
   if (q.isError) return <ErrorState compact onRetry={() => void q.refetch()} />;
   if (q.data!.length === 0) return <EmptyState compact icon={<Stethoscope />} title={t('consultations.emptyTitle')} body={t('consultations.emptyBody')} />;
@@ -53,7 +52,7 @@ function VisitsTab({ patientId }: { patientId: string }) {
               <p className="font-medium">{c.chief_complaint}</p>
               <p className="text-sm text-ink-muted">{[c.ayurvedic_diagnosis, c.diagnosis].filter(Boolean).join(' · ') || '—'}</p>
               <p className="tabular mt-0.5 text-xs text-ink-muted">
-                {formatDate(c.visit_date)} · {names.get(c.doctor_id) ?? ''}
+                {formatDate(c.visit_date)} · {branchName(c.branch_id)}
                 {c.follow_up_date && ` · ${t('consultations.followUp')}: ${formatDate(c.follow_up_date)}`}
               </p>
             </div>
@@ -86,9 +85,8 @@ function ExamSummary({ exam }: { exam: Pick<AyurvedicExamination, 'prakriti' | '
 
 function FollowUpsTab({ patientId }: { patientId: string }) {
   const { t } = useI18n();
-  const { clinicId } = useClinic();
-  const { names } = useDoctors();
-  const q = useQuery({ queryKey: [clinicId, 'follow-ups', { patientId }], queryFn: () => listFollowUps(clinicId, { patientId }) });
+  const { branchName } = useAccess();
+  const q = useQuery({ queryKey: ['follow-ups', { patientId }], queryFn: () => listFollowUps({ patientId }) });
   if (q.isLoading) return <SkeletonRows rows={2} />;
   if (q.isError) return <ErrorState compact onRetry={() => void q.refetch()} />;
   if (q.data!.length === 0) return <EmptyState compact icon={<CalendarClock />} title={t('followUps.none')} />;
@@ -101,7 +99,7 @@ function FollowUpsTab({ patientId }: { patientId: string }) {
               {t('followUps.due')} {formatDate(f.due_date)}
             </p>
             <p className="text-xs text-ink-muted">
-              {names.get(f.doctor_id) ?? ''}
+              {branchName(f.branch_id)}
               {f.reason && ` · ${f.reason}`}
             </p>
           </div>
@@ -121,8 +119,7 @@ function FollowUpsTab({ patientId }: { patientId: string }) {
 
 function PrescriptionsTab({ patientId }: { patientId: string }) {
   const { t } = useI18n();
-  const { clinicId } = useClinic();
-  const q = useQuery({ queryKey: qk.prescriptions(clinicId, { patientId }), queryFn: () => listPrescriptions(clinicId, { patientId }) });
+  const q = useQuery({ queryKey: qk.prescriptions({ patientId }), queryFn: () => listPrescriptions({ patientId }) });
   if (q.isLoading) return <SkeletonRows rows={3} />;
   if (q.isError) return <ErrorState compact onRetry={() => void q.refetch()} />;
   if (q.data!.length === 0) return <EmptyState compact icon={<Pill />} title={t('prescriptions.emptyTitle')} body={t('prescriptions.emptyBody')} />;
@@ -146,9 +143,8 @@ function PrescriptionsTab({ patientId }: { patientId: string }) {
 
 function InvoicesTab({ patientId }: { patientId: string }) {
   const { t } = useI18n();
-  const { clinicId } = useClinic();
   const params = { page: 1, pageSize: 50, patientId };
-  const q = useQuery({ queryKey: qk.invoices(clinicId, params), queryFn: () => listInvoices(clinicId, params) });
+  const q = useQuery({ queryKey: qk.invoices(params), queryFn: () => listInvoices(params) });
   if (q.isLoading) return <SkeletonRows rows={3} />;
   if (q.isError) return <ErrorState compact onRetry={() => void q.refetch()} />;
   if (q.data!.rows.length === 0) return <EmptyState compact icon={<Receipt />} title={t('billing.emptyTitle')} />;
@@ -174,9 +170,8 @@ function InvoicesTab({ patientId }: { patientId: string }) {
 
 function AppointmentsTab({ patientId }: { patientId: string }) {
   const { t } = useI18n();
-  const { clinicId } = useClinic();
-  const { names } = useDoctors();
-  const q = useQuery({ queryKey: qk.appointments(clinicId, { patientId }), queryFn: () => listPatientAppointments(clinicId, patientId) });
+  const { branchName } = useAccess();
+  const q = useQuery({ queryKey: qk.appointments({ patientId }), queryFn: () => listPatientAppointments(patientId) });
   if (q.isLoading) return <SkeletonRows rows={3} />;
   if (q.isError) return <ErrorState compact onRetry={() => void q.refetch()} />;
   if (q.data!.length === 0) return <EmptyState compact title={t('appointments.emptyDay')} />;
@@ -188,7 +183,7 @@ function AppointmentsTab({ patientId }: { patientId: string }) {
             <div>
               <p className="tabular font-medium">{formatDateTime(a.starts_at)}</p>
               <p className="text-xs text-ink-muted">
-                {t(`appointmentType.${a.type}`)} · {names.get(a.doctor_id) ?? ''}
+                {t(`appointmentType.${a.type}`)} · {branchName(a.branch_id)}
               </p>
             </div>
             <StatusBadge status={a.status} label={t(`appointmentStatus.${a.status}`)} />
@@ -202,11 +197,13 @@ function AppointmentsTab({ patientId }: { patientId: string }) {
 export function PatientDetailPage() {
   const { patientId = '' } = useParams();
   const { t } = useI18n();
-  const { clinicId, can } = useClinic();
-  const { names } = useDoctors();
+  const { can, branchName } = useAccess();
   const [editing, setEditing] = useState(false);
   // view_patient records a 'patients.viewed' audit event server-side.
-  const query = useQuery({ queryKey: [clinicId, 'patient-view', patientId], queryFn: () => viewPatient(patientId) });
+  const query = useQuery({ queryKey: ['patient-view', patientId], queryFn: () => viewPatient(patientId) });
+  // Medical history needs its own permission; staff without it never receive these fields.
+  const canHistory = can('patients.view_history');
+  const medical = useQuery({ queryKey: ['medical-profile', patientId], queryFn: () => getMedicalProfile(patientId), enabled: canHistory });
 
   if (query.isLoading) return <FullPageSpinner />;
   if (query.isError) {
@@ -216,9 +213,12 @@ export function PatientDetailPage() {
   const p = query.data!;
   const name = fullName(p);
   const age = ageLabel(p);
-  const canClinical = can(CAN_VIEW_CLINICAL);
-  const canPrescriptions = can(CAN_VIEW_PRESCRIPTIONS);
-  const canFollowUps = canClinical || can('appointments.manage');
+  const m = medical.data;
+  const canVisits = can(REQUIRES.viewConsultations);
+  const canPrescriptions = can(REQUIRES.viewPrescriptions);
+  const canInvestigations = can(REQUIRES.viewInvestigations);
+  const canDocuments = can('documents.view') || can('investigations.upload');
+  const canFollowUps = can(REQUIRES.viewFollowUps);
 
   return (
     <>
@@ -228,19 +228,18 @@ export function PatientDetailPage() {
         meta={
           <>
             {p.status !== 'active' && <Badge tone="warning">{t(`patientStatus.${p.status}`)}</Badge>}
-            {p.prakriti && <Badge tone="forest">{t('patients.prakriti')}: {t(`prakriti.${p.prakriti}`)}</Badge>}
-            {p.blood_group && <Badge>{p.blood_group}</Badge>}
-            {p.assigned_doctor_id && <Badge tone="gold">{names.get(p.assigned_doctor_id) ?? t('patients.assignedDoctor')}</Badge>}
+            {m?.prakriti && <Badge tone="forest">{t('patients.prakriti')}: {t(`prakriti.${m.prakriti}`)}</Badge>}
+            {m?.blood_group && <Badge>{m.blood_group}</Badge>}
           </>
         }
         actions={
           <>
-            {can('patients.update') && (
+            {can(REQUIRES.editPatient) && (
               <Button variant="secondary" leftIcon={<Pencil className="size-4" />} onClick={() => setEditing(true)}>
                 {t('common.edit')}
               </Button>
             )}
-            {can('appointments.manage') && (
+            {can('appointments.create') && (
               <Link to={`/appointments?book=1&patient=${p.id}`} className={buttonClasses('secondary')}>
                 <CalendarPlus className="size-4" aria-hidden /> {t('appointments.book')}
               </Link>
@@ -250,7 +249,7 @@ export function PatientDetailPage() {
                 <Receipt className="size-4" aria-hidden /> {t('billing.newInvoice')}
               </Link>
             )}
-            {can('clinical.write') && (
+            {can('consultations.create') && (
               <Link to={`/consultations/new?patient=${p.id}`} className={buttonClasses('primary')}>
                 <FilePlus2 className="size-4" aria-hidden /> {t('consultations.new')}
               </Link>
@@ -259,10 +258,10 @@ export function PatientDetailPage() {
         }
       />
 
-      {p.allergies && (
+      {m?.allergies && (
         <div className="mb-4">
           <Alert tone="danger" icon={<AlertTriangle />} title={t('patients.allergies')}>
-            {p.allergies}
+            {m.allergies}
           </Alert>
         </div>
       )}
@@ -270,14 +269,14 @@ export function PatientDetailPage() {
       <Tabs defaultValue="overview">
         <TabsList label={name}>
           <TabsTrigger value="overview">{t('patients.overview')}</TabsTrigger>
-          {canClinical && <TabsTrigger value="visits">{t('patients.visits')}</TabsTrigger>}
+          {canVisits && <TabsTrigger value="visits">{t('patients.visits')}</TabsTrigger>}
           {canPrescriptions && <TabsTrigger value="prescriptions">{t('patients.prescriptions')}</TabsTrigger>}
-          {canClinical && <TabsTrigger value="investigations">{t('patients.investigations')}</TabsTrigger>}
-          {canClinical && <TabsTrigger value="documents">{t('patients.documents')}</TabsTrigger>}
-          <TabsTrigger value="appointments">{t('patients.appointments')}</TabsTrigger>
+          {canInvestigations && <TabsTrigger value="investigations">{t('patients.investigations')}</TabsTrigger>}
+          {canDocuments && <TabsTrigger value="documents">{t('patients.documents')}</TabsTrigger>}
+          {can('appointments.view') && <TabsTrigger value="appointments">{t('patients.appointments')}</TabsTrigger>}
           {canFollowUps && <TabsTrigger value="follow-ups">{t('followUps.history')}</TabsTrigger>}
-          {can('billing.read') && <TabsTrigger value="invoices">{t('patients.invoices')}</TabsTrigger>}
-          <TabsTrigger value="consents">{t('patients.consents')}</TabsTrigger>
+          {can('billing.view') && <TabsTrigger value="invoices">{t('patients.invoices')}</TabsTrigger>}
+          {can('patients.view_basic') && <TabsTrigger value="consents">{t('patients.consents')}</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="overview">
@@ -295,23 +294,24 @@ export function PatientDetailPage() {
                 </dl>
               </CardBody>
             </Card>
-            <Card>
-              <CardHeader title={t('patients.sectionMedical')} />
-              <CardBody>
-                <dl className="space-y-4">
-                  <Detail label={t('patients.prakriti')}>{p.prakriti && t(`prakriti.${p.prakriti}`)}</Detail>
-                  <Detail label={t('patients.chronicConditions')}>{p.chronic_conditions && <span className="whitespace-pre-line">{p.chronic_conditions}</span>}</Detail>
-                  <Detail label={t('patients.allergies')}>{p.allergies}</Detail>
-                  <Detail label={t('patients.occupation')}>{p.occupation}</Detail>
-                  <Detail label={t('patients.registered')}>
-                    <span className="tabular">{formatDate(p.registered_on)}</span>
-                  </Detail>
-                </dl>
-              </CardBody>
-            </Card>
+            <div className="space-y-4">
+              <Card>
+                <CardHeader title={t('patients.registration')} />
+                <CardBody>
+                  <dl className="space-y-4">
+                    <Detail label={t('patients.registered')}>
+                      <span className="tabular">{formatDate(p.registered_on)}</span>
+                    </Detail>
+                    <Detail label={t('patients.registeredAt')}>{branchName(p.registered_branch_id)}</Detail>
+                    <Detail label={t('patients.occupation')}>{p.occupation}</Detail>
+                  </dl>
+                </CardBody>
+              </Card>
+              {canHistory && <MedicalProfileCard patientId={p.id} profile={m ?? null} loading={medical.isLoading} />}
+            </div>
           </div>
         </TabsContent>
-        {canClinical && (
+        {canVisits && (
           <TabsContent value="visits">
             <VisitsTab patientId={p.id} />
           </TabsContent>
@@ -321,28 +321,30 @@ export function PatientDetailPage() {
             <PrescriptionsTab patientId={p.id} />
           </TabsContent>
         )}
-        {canClinical && (
+        {canInvestigations && (
           <TabsContent value="investigations">
-            <InvestigationsPanel patientId={p.id} canWrite={can('clinical.write')} />
+            <InvestigationsPanel patientId={p.id} canWrite={can('investigations.order')} />
           </TabsContent>
         )}
-        {canClinical && (
+        {canDocuments && (
           <TabsContent value="documents">
-            <DocumentsPanel patientId={p.id} canWrite={can('clinical.write')} />
+            <DocumentsPanel patientId={p.id} canWrite={can('investigations.upload')} />
           </TabsContent>
         )}
         <TabsContent value="consents">
           <ConsentsPanel patientId={p.id} />
         </TabsContent>
-        <TabsContent value="appointments">
-          <AppointmentsTab patientId={p.id} />
-        </TabsContent>
+        {can('appointments.view') && (
+          <TabsContent value="appointments">
+            <AppointmentsTab patientId={p.id} />
+          </TabsContent>
+        )}
         {canFollowUps && (
           <TabsContent value="follow-ups">
             <FollowUpsTab patientId={p.id} />
           </TabsContent>
         )}
-        {can('billing.read') && (
+        {can('billing.view') && (
           <TabsContent value="invoices">
             <InvoicesTab patientId={p.id} />
           </TabsContent>

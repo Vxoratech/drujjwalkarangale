@@ -1,5 +1,7 @@
 # Vaidyora — Phase A: audit and architecture
 
+> **Superseded:** revision 2 (single organization, one doctor, many branches) is in [ARCHITECTURE.md](ARCHITECTURE.md). This page records the original multi-tenant design.
+
 The ten deliverables the brief asks for before implementation, in one place. Each section is a summary; the linked documents hold the detail (several are generated from the migrations, so they can't drift).
 
 ## 1. Repository audit

@@ -125,14 +125,14 @@ describe('permission guards', () => {
   it('Can hides content without the permission', () => {
     renderWithProviders(
       <>
-        <Can requirement="billing.read">
+        <Can requirement="billing.view">
           <p>Revenue</p>
         </Can>
-        <Can requirement="clinical.write">
+        <Can requirement="consultations.edit">
           <p>Write consultation</p>
         </Can>
       </>,
-      { permissions: ['clinical.write'] },
+      { permissions: ['consultations.edit'] },
     );
     expect(screen.queryByText('Revenue')).not.toBeInTheDocument();
     expect(screen.getByText('Write consultation')).toBeInTheDocument();
@@ -140,10 +140,10 @@ describe('permission guards', () => {
 
   it('RequirePermission renders a permission-denied state', () => {
     renderWithProviders(
-      <RequirePermission requirement="audit.read">
+      <RequirePermission requirement="audit.view">
         <p>Audit</p>
       </RequirePermission>,
-      { permissions: ['patients.read_assigned'] },
+      { permissions: ['patients.view_basic'] },
     );
     expect(screen.queryByText('Audit')).not.toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent('You do not have access');
@@ -151,7 +151,7 @@ describe('permission guards', () => {
 
   it('renders localized Marathi copy', () => {
     renderWithProviders(
-      <RequirePermission requirement="audit.read">
+      <RequirePermission requirement="audit.view">
         <p>Audit</p>
       </RequirePermission>,
       { permissions: [], locale: 'mr' },

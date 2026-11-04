@@ -27,7 +27,6 @@ describe('patient form schema', () => {
     const input = toPatientInput(parsed);
     expect(input.first_name).toBe('Asha');
     expect(input.email).toBeNull();
-    expect(input.blood_group).toBeNull();
     expect(input.phone).toBe('+91 98220 10001');
   });
 });
