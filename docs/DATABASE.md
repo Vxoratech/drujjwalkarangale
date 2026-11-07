@@ -1279,6 +1279,8 @@
 | `created_at` | timestamp with time zone | no | now() |
 | `updated_at` | timestamp with time zone | no | now() |
 | `updated_by` | uuid | yes |  |
+| `consultation_fee_paise` | bigint | yes |  |
+| `invoice_id` | uuid | yes |  |
 
 </details>
 
@@ -1293,6 +1295,7 @@
 - **Check** `consultations_check1`: CHECK (((status = 'finalized'::record_status) = (finalized_at IS NOT NULL)))
 - **Check** `consultations_chief_complaint_check`: CHECK (((char_length(chief_complaint) >= 1) AND (char_length(chief_complaint) <= 2000)))
 - **Check** `consultations_clinical_findings_check`: CHECK ((char_length(clinical_findings) <= 5000))
+- **Check** `consultations_consultation_fee_paise_check`: CHECK (((consultation_fee_paise >= 0) AND (consultation_fee_paise <= 10000000)))
 - **Check** `consultations_diagnosis_check`: CHECK ((char_length(diagnosis) <= 1000))
 - **Check** `consultations_doctor_notes_check`: CHECK ((char_length(doctor_notes) <= 5000))
 - **Check** `consultations_height_cm_check`: CHECK (((height_cm >= (30)::numeric) AND (height_cm <= (260)::numeric)))
@@ -1308,6 +1311,7 @@
 - **FK** `consultations_appointment_id_fkey`: FOREIGN KEY (appointment_id) REFERENCES appointments(id)
 - **FK** `consultations_branch_id_fkey`: FOREIGN KEY (branch_id) REFERENCES clinic_branches(id)
 - **FK** `consultations_created_by_fkey`: FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL
+- **FK** `consultations_invoice_id_fkey`: FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE SET NULL
 - **FK** `consultations_patient_id_fkey`: FOREIGN KEY (patient_id) REFERENCES patients(id)
 - **FK** `consultations_updated_by_fkey`: FOREIGN KEY (updated_by) REFERENCES auth.users(id) ON DELETE SET NULL
 - **PK** `consultations_pkey`: PRIMARY KEY (id)
@@ -1319,13 +1323,14 @@
 
 - CREATE UNIQUE INDEX consultations_appointment_id_key USING btree (appointment_id)
 - CREATE INDEX consultations_branch_idx USING btree (branch_id, visit_date DESC)
+- CREATE INDEX consultations_invoice_idx USING btree (invoice_id) WHERE (invoice_id IS NOT NULL)
 - CREATE INDEX consultations_open_idx USING btree (status) WHERE (status = 'draft'::record_status)
 - CREATE INDEX consultations_patient_idx USING btree (patient_id, visit_date DESC)
 - CREATE UNIQUE INDEX consultations_pkey USING btree (id)
 
 </details>
 
-**Triggers.** `consultations_audit`, `consultations_branch_default`, `consultations_defaults`, `consultations_lock`, `consultations_updated_at`, `consultations_updated_by`
+**Triggers.** `consultations_audit`, `consultations_branch_default`, `consultations_defaults`, `consultations_insert_guard`, `consultations_lock`, `consultations_updated_at`, `consultations_updated_by`
 
 **Row Level Security** (role `authenticated`; `anon` has no access).
 
@@ -1657,12 +1662,16 @@
 | `created_at` | timestamp with time zone | no | now() |
 | `updated_at` | timestamp with time zone | no | now() |
 | `updated_by` | uuid | yes |  |
+| `consultation_fee_paise` | bigint | yes |  |
+| `invoice_id` | uuid | yes |  |
 
 </details>
 
 <details><summary>Constraints and relationships</summary>
 
 - **Check** `prescriptions_check`: CHECK ((((status = 'issued'::prescription_status) = ((issued_at IS NOT NULL) AND (prescription_no IS NOT NULL))) OR (status = 'cancelled'::prescription_status)))
+- **Check** `prescriptions_consultation_fee_paise_check`: CHECK (((consultation_fee_paise >= 0) AND (consultation_fee_paise <= 10000000)))
+- **Check** `prescriptions_fee_standalone`: CHECK (((consultation_fee_paise IS NULL) OR (consultation_id IS NULL)))
 - **Check** `prescriptions_language_check`: CHECK ((language = ANY (ARRAY['en'::text, 'mr'::text])))
 - **Check** `prescriptions_notes_check`: CHECK ((char_length(notes) <= 2000))
 - **Check** `prescriptions_patient_instructions_check`: CHECK ((char_length(patient_instructions) <= 2000))
@@ -1671,6 +1680,7 @@
 - **FK** `prescriptions_branch_id_fkey`: FOREIGN KEY (branch_id) REFERENCES clinic_branches(id)
 - **FK** `prescriptions_consultation_id_fkey`: FOREIGN KEY (consultation_id) REFERENCES consultations(id)
 - **FK** `prescriptions_created_by_fkey`: FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL
+- **FK** `prescriptions_invoice_id_fkey`: FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE SET NULL
 - **FK** `prescriptions_patient_id_fkey`: FOREIGN KEY (patient_id) REFERENCES patients(id)
 - **FK** `prescriptions_updated_by_fkey`: FOREIGN KEY (updated_by) REFERENCES auth.users(id) ON DELETE SET NULL
 - **PK** `prescriptions_pkey`: PRIMARY KEY (id)
@@ -1682,6 +1692,7 @@
 
 - CREATE INDEX prescriptions_branch_idx USING btree (branch_id, issued_at DESC)
 - CREATE INDEX prescriptions_drafts_idx USING btree (status) WHERE (status = 'draft'::prescription_status)
+- CREATE INDEX prescriptions_invoice_idx USING btree (invoice_id) WHERE (invoice_id IS NOT NULL)
 - CREATE INDEX prescriptions_patient_idx USING btree (patient_id, created_at DESC)
 - CREATE UNIQUE INDEX prescriptions_pkey USING btree (id)
 - CREATE UNIQUE INDEX prescriptions_prescription_no_key USING btree (prescription_no)

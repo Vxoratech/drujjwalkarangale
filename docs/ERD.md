@@ -109,6 +109,7 @@ erDiagram
     uuid appointment_id FK
     uuid branch_id FK
     record_status status
+    uuid invoice_id FK
   }
   clinic_branches ||--o{ patients : "registered_branch_id"
   patients ||--o| patient_medical_profiles : "patient_id"
@@ -139,6 +140,7 @@ erDiagram
     uuid appointment_id FK
     uuid branch_id FK
     record_status status
+    uuid invoice_id FK
   }
   ayurvedic_examinations {
     uuid id PK
@@ -160,6 +162,7 @@ erDiagram
     uuid consultation_id FK
     uuid branch_id FK
     prescription_status status
+    uuid invoice_id FK
   }
   prescription_items {
     uuid id PK
