@@ -26,7 +26,7 @@ export const patientSchema = z.object({
     .transform((v) => (v === '' ? null : Number(v)))
     .refine((v) => v === null || (Number.isInteger(v) && v >= 0 && v <= 130), { message: 'range:0:130' }),
   status: z.enum(PATIENT_STATUSES),
-}).refine((v) => !(v.date_of_birth && v.approx_age_years !== null), { path: ['approx_age_years'], message: 'dobOrAge' });
+});
 
 export type PatientFormInput = z.input<typeof patientSchema>;
 export type PatientFormValues = z.output<typeof patientSchema>;
@@ -66,7 +66,8 @@ export function toPatientInput(v: PatientFormValues): PatientInput {
     emergency_contact_phone: blank(v.emergency_contact_phone),
     preferred_locale: v.preferred_locale,
     occupation: blank(v.occupation),
-    approx_age_years: v.approx_age_years,
+    // With a date of birth the age is calculated from it; an approximate age is stored only without one.
+    approx_age_years: v.date_of_birth ? null : v.approx_age_years,
     status: v.status,
   };
 }

@@ -41,7 +41,7 @@ export function Gallery() {
       <PageHeader
         breadcrumbs={[{ label: 'Design system', to: '/__gallery' }, { label: 'Components' }]}
         title="Component gallery"
-        description="Vaidyora tokens and components (development only)."
+        description="Design tokens and components (development only)."
         actions={
           <>
             <Button variant="secondary">Secondary</Button>

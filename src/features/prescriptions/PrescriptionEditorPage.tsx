@@ -2,7 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ban, BookmarkPlus, FileCheck2, FilePen, History, LayoutTemplate, Plus, Printer, Save, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { useFieldArray, useForm } from 'react-hook-form';
+import { useFieldArray, useForm, useWatch } from 'react-hook-form';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Alert, ErrorState, FullPageSpinner, PermissionDenied } from '@/components/feedback/States';
 import { notify } from '@/components/feedback/toast';
@@ -18,7 +18,7 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { useAccess } from '@/features/access/AccessProvider';
 import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { isPermissionError, toUserMessage } from '@/lib/errors';
-import { ageLabel, formatDate, formatDateTime, fullName, todayISO } from '@/lib/formatters';
+import { ageLabel, formatDate, formatDateTime, formatINR, fullName, rupeesToPaise, todayISO } from '@/lib/formatters';
 import { qk } from '@/lib/query/keys';
 import { useFieldError } from '@/lib/validation/useFieldError';
 import { useI18n } from '@/locales/i18n';
@@ -73,19 +73,27 @@ export function PrescriptionEditorPage() {
   const editable = can('prescriptions.create') && (!rx || rx.status === 'draft');
   const templates = useQuery({ queryKey: ['rx-templates'], queryFn: () => listTemplates(), enabled: editable });
 
-  const form = useForm<PrescriptionFormInput, unknown, PrescriptionFormValues>({ resolver: zodResolver(prescriptionSchema), defaultValues: toPrescriptionForm() });
+  const form = useForm<PrescriptionFormInput, unknown, PrescriptionFormValues>({ resolver: zodResolver(prescriptionSchema), defaultValues: toPrescriptionForm(null, 'en', consultationId ? null : settings.consultation_fee_paise) });
   const items = useFieldArray({ control: form.control, name: 'items' });
   const e = form.formState.errors;
+  // A prescription that belongs to a consultation is billed with that visit;
+  // only one written on its own carries a fee.
+  const standalone = !consultationId;
+  // The details panel follows the fee as typed while the draft is open.
+  const feeText = useWatch({ control: form.control, name: 'consultation_fee' });
+  const typedFee = feeText?.trim() ? rupeesToPaise(feeText) : 0;
+  const shownFee = !standalone ? 0 : editable ? (Number.isFinite(typedFee) && typedFee > 0 ? typedFee : 0) : rx?.consultation_fee_paise ?? 0;
 
   useEffect(() => {
+    const defaultFee = standalone ? settings.consultation_fee_paise : null;
     if (rx) form.reset(toPrescriptionForm(rx));
     // Apply defaults only to an untouched form, so a late-arriving patient
     // record can never wipe what the doctor has already typed.
-    else if (patient.data && JSON.stringify(form.getValues()) === JSON.stringify(toPrescriptionForm())) {
+    else if (patient.data && JSON.stringify(form.getValues()) === JSON.stringify(toPrescriptionForm(null, 'en', defaultFee))) {
       const pref = settings.preferences.prescription_language;
-      form.reset(toPrescriptionForm(null, pref === 'en' || pref === 'mr' ? pref : patient.data.preferred_locale));
+      form.reset(toPrescriptionForm(null, pref === 'en' || pref === 'mr' ? pref : patient.data.preferred_locale, defaultFee));
     }
-  }, [rx, patient.data, form, settings.preferences.prescription_language]);
+  }, [rx, patient.data, form, settings.preferences.prescription_language, settings.consultation_fee_paise, standalone]);
 
   useUnsavedChangesGuard(form.formState.isDirty && editable, t('consultations.unsaved'));
 
@@ -100,6 +108,7 @@ export function PrescriptionEditorPage() {
     mutationFn: async ({ values, issue }: { values: PrescriptionFormValues; issue: boolean }) => {
       // Linked to a consultation, the server uses that visit's branch.
       const header = { ...toHeaderInput(values), branch_id: consultationId ? null : defaultBranchId };
+      if (consultationId) header.consultation_fee_paise = null;
       const id = await savePrescriptionDraft({ patient_id: patientId!, consultation_id: consultationId, header }, toItemInputs(values), prescriptionId);
       if (issue) await issuePrescription(id, reviewed);
       return { id, issue };
@@ -275,10 +284,10 @@ export function PrescriptionEditorPage() {
                           {editable && <IconButton size="sm" label={`${t('common.remove')} ${index + 1}`} icon={<Trash2 />} onClick={() => items.remove(index)} />}
                         </div>
                         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-6">
-                          <FormField label={t('prescriptions.medicine')} error={fieldError(ie?.medicine_name)} required className="lg:col-span-3">
+                          <FormField label={t('prescriptions.medicine')} error={fieldError(ie?.medicine_name)} required className="lg:col-span-2">
                             <Input {...form.register(`items.${index}.medicine_name`)} />
                           </FormField>
-                          <FormField label={t('prescriptions.form')} className="lg:col-span-1">
+                          <FormField label={t('prescriptions.form')} className="lg:col-span-2">
                             <Select options={MEDICINE_FORMS.map((f) => ({ value: f, label: t(`medicineForm.${f}`) }))} {...form.register(`items.${index}.form`)} />
                           </FormField>
                           <FormField label={t('prescriptions.route')} className="lg:col-span-2">
@@ -323,7 +332,12 @@ export function PrescriptionEditorPage() {
             </Card>
             <Card>
               <CardBody className="space-y-4">
-                <FormGrid>
+                <FormGrid cols={standalone ? 3 : 2}>
+                  {standalone && (
+                    <FormField label={t('prescriptions.fee')} hint={t('prescriptions.feeHint')} error={fieldError(e.consultation_fee)}>
+                      <Input inputMode="decimal" className="tabular" placeholder="0" {...form.register('consultation_fee')} />
+                    </FormField>
+                  )}
                   <FormField label={t('prescriptions.language')}>
                     <Select options={[{ value: 'en', label: 'English' }, { value: 'mr', label: 'मराठी' }]} {...form.register('language')} />
                   </FormField>
@@ -372,6 +386,26 @@ export function PrescriptionEditorPage() {
                   <dt className="text-xs text-ink-muted">{t('prescriptions.reference')}</dt>
                   <dd className="tabular">{rx?.prescription_no ?? t('prescriptions.assignedOnIssue')}</dd>
                 </div>
+                <div>
+                  <dt className="text-xs text-ink-muted">{t('prescriptions.feeLocked')}</dt>
+                  <dd className="tabular">{!standalone ? t('prescriptions.feeWithConsultation') : shownFee ? formatINR(shownFee) : t('prescriptions.noFee')}</dd>
+                </div>
+                {shownFee > 0 && (
+                  <div>
+                    <dt className="text-xs text-ink-muted">{t('prescriptions.feeInvoice')}</dt>
+                    <dd>
+                      {rx?.invoice_id && rx.status !== 'draft' ? (
+                        can('billing.view') && (
+                          <Link to={`/billing/${rx.invoice_id}`} className="text-forest hover:underline">
+                            {t('common.view')}
+                          </Link>
+                        )
+                      ) : (
+                        <span className="text-ink-muted">{t('prescriptions.feeInvoiceOnIssue')}</span>
+                      )}
+                    </dd>
+                  </div>
+                )}
                 <div>
                   <dt className="text-xs text-ink-muted">{t('billing.date')}</dt>
                   <dd className="tabular">{formatDate(rx?.issued_at ?? rx?.created_at ?? todayISO())}</dd>

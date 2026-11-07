@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import { DOSE_TIMINGS, MEDICINE_FORMS, MEDICINE_ROUTES, type Prescription, type PrescriptionTemplate } from '@/types/domain';
 import type { PrescriptionHeaderInput, PrescriptionItemInput } from '@/services/clinical';
+import { paiseToRupees } from '@/lib/formatters';
+import { optionalRupees } from '@/lib/validation/schemas';
 
 const opt = (max: number) => z.string().trim().max(max).optional().or(z.literal(''));
 
@@ -26,6 +28,8 @@ export const prescriptionSchema = z.object({
   patient_instructions: opt(2000),
   follow_up_date: z.string().optional().or(z.literal('')),
   notes: opt(2000),
+  /** Rupees as typed; empty means no fee. Only for prescriptions written without a consultation. */
+  consultation_fee: optionalRupees(),
   items: z.array(prescriptionItemSchema).max(50),
 });
 
@@ -64,8 +68,12 @@ function toItemForm(i: Partial<PrescriptionItemInput>): ItemInput {
   };
 }
 
-export function toPrescriptionForm(rx?: Prescription | null, defaultLanguage: 'en' | 'mr' = 'en'): PrescriptionFormInput {
+const feeText = (paise: number | null | undefined) => (paise ? String(paiseToRupees(paise)) : '');
+
+/** A new prescription starts with the clinic's default consultation fee. */
+export function toPrescriptionForm(rx?: Prescription | null, defaultLanguage: 'en' | 'mr' = 'en', defaultFeePaise?: number | null): PrescriptionFormInput {
   return {
+    consultation_fee: rx ? feeText(rx.consultation_fee_paise) : feeText(defaultFeePaise),
     language: rx?.language ?? defaultLanguage,
     patient_instructions: rx?.patient_instructions ?? '',
     follow_up_date: rx?.follow_up_date ?? '',
@@ -101,5 +109,6 @@ export function toHeaderInput(values: PrescriptionFormValues): PrescriptionHeade
     patient_instructions: values.patient_instructions || null,
     follow_up_date: values.follow_up_date || null,
     notes: values.notes || null,
+    consultation_fee_paise: values.consultation_fee,
   };
 }

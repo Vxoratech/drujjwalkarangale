@@ -47,7 +47,7 @@ export function PreferencesCard() {
     <Card>
       <CardHeader title={t('settings.preferences')} description={t('settings.preferencesHint')} />
       <CardBody className="space-y-5">
-        <FormGrid cols={3}>
+        <FormGrid cols={1}>
           <FormField label={t('settings.defaultDuration')}>
             <Select
               value={String(draft.default_appointment_minutes ?? 30)}

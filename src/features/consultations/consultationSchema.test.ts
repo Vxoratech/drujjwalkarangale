@@ -24,6 +24,15 @@ describe('consultation schema', () => {
     expect(consultationSchema.safeParse({ ...base, bp_systolic: '120', bp_diastolic: '80' }).success).toBe(true);
   });
 
+  it('starts with the clinic fee and sends it in paise; blank means a free visit', () => {
+    const form = { ...toConsultationForm(null, null, null, 50000), chief_complaint: 'Joint pain' };
+    expect(form.consultation_fee).toBe('500');
+    const ctx = { patient_id: 'p', branch_id: 'b', appointment_id: null };
+    expect(toConsultationPayload(consultationSchema.parse({ ...form, consultation_fee: '750' }), ctx).input.consultation_fee_paise).toBe(75000);
+    expect(toConsultationPayload(consultationSchema.parse({ ...form, consultation_fee: '' }), ctx).input.consultation_fee_paise).toBeNull();
+    expect(consultationSchema.safeParse({ ...form, consultation_fee: '-1' }).success).toBe(false);
+  });
+
   it('computes BMI', () => {
     expect(computeBmi(68, 158)).toBe(27.2);
     expect(computeBmi(null, 158)).toBeNull();

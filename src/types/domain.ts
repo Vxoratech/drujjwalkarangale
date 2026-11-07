@@ -269,6 +269,10 @@ export interface Consultation {
   pathya: string | null;
   apathya: string | null;
   follow_up_date: DateString | null;
+  /** Fee for the visit; finalizing raises an invoice for it. */
+  consultation_fee_paise: Paise | null;
+  /** Invoice raised for the fee when the consultation was finalized. */
+  invoice_id: UUID | null;
   finalized_at: Timestamp | null;
   created_at: Timestamp;
 }
@@ -376,6 +380,10 @@ export interface Prescription {
   language: Locale;
   patient_instructions: string | null;
   follow_up_date: DateString | null;
+  /** Consultation fee the doctor set; issuing raises an invoice for it. */
+  consultation_fee_paise: Paise | null;
+  /** Invoice raised for the fee when the prescription was issued. */
+  invoice_id: UUID | null;
   revision_number: number;
   revision_reason: string | null;
   issued_at: Timestamp | null;

@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { notify } from '@/components/feedback/toast';
 import { FormField, FormGrid, FormSection } from '@/components/forms/FormField';
 import { Button } from '@/components/ui/Button';
-import { Card, CardBody, CardHeader } from '@/components/ui/Card';
+import { Card, CardBody } from '@/components/ui/Card';
 import { Input, Select } from '@/components/ui/Input';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { useAccess } from '@/features/access/AccessProvider';
@@ -112,7 +112,6 @@ export function SettingsPage() {
       <PageHeader title={t('settings.title')} description={t('settings.subtitle')} />
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
         <Card>
-          <CardHeader title={t('settings.profile')} />
           <CardBody className="py-6">
             <form noValidate onSubmit={form.handleSubmit((v) => mutation.mutate(v))}>
               <fieldset disabled={mutation.isPending} className="space-y-6">

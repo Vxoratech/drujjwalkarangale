@@ -57,7 +57,7 @@ export async function findConsultationForAppointment(appointmentId: UUID): Promi
   return row?.id ?? null;
 }
 
-export type ConsultationInput = Omit<Consultation, 'id' | 'status' | 'finalized_at' | 'created_at' | 'visit_date'>;
+export type ConsultationInput = Omit<Consultation, 'id' | 'status' | 'finalized_at' | 'created_at' | 'visit_date' | 'invoice_id'>;
 export type ExaminationInput = Omit<AyurvedicExamination, 'id' | 'consultation_id' | 'patient_id'>;
 
 /** Save consultation + examination atomically (public.save_consultation, RLS-enforced). */
@@ -97,6 +97,7 @@ export interface PrescriptionHeaderInput {
   language: Locale;
   patient_instructions: string | null;
   follow_up_date: string | null;
+  consultation_fee_paise: number | null;
 }
 
 /** Save a draft prescription and replace its items in one transaction (public.save_prescription_draft). */

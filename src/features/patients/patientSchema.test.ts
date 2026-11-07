@@ -17,9 +17,11 @@ describe('patient form schema', () => {
     }
   });
 
-  it('accepts an approximate age only when the date of birth is unknown', () => {
-    expect(patientSchema.safeParse({ ...toFormValues(), first_name: 'Asha', approx_age_years: '45' }).success).toBe(true);
-    expect(patientSchema.safeParse({ ...toFormValues(), first_name: 'Asha', approx_age_years: '45', date_of_birth: '1980-01-01' }).success).toBe(false);
+  it('keeps an approximate age only when the date of birth is unknown', () => {
+    expect(toPatientInput(patientSchema.parse({ ...toFormValues(), first_name: 'Asha', approx_age_years: '45' })).approx_age_years).toBe(45);
+    // A date of birth wins: the age is calculated from it, never stored alongside it.
+    const withDob = toPatientInput(patientSchema.parse({ ...toFormValues(), first_name: 'Asha', approx_age_years: '45', date_of_birth: '1980-01-01' }));
+    expect(withDob).toMatchObject({ date_of_birth: '1980-01-01', approx_age_years: null });
   });
 
   it('maps blank optional fields to null', () => {

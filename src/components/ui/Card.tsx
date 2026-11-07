@@ -8,7 +8,7 @@ export function Card({ className, ...rest }: HTMLAttributes<HTMLDivElement>) {
 export function CardHeader({ title, description, actions, className }: { title: ReactNode; description?: ReactNode; actions?: ReactNode; className?: string }) {
   return (
     <div className={cn('flex flex-wrap items-start justify-between gap-3 border-b border-line px-5 py-4', className)}>
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1 basis-48">
         <h2 className="font-display text-base font-semibold">{title}</h2>
         {description && <p className="mt-0.5 text-sm text-ink-muted">{description}</p>}
       </div>

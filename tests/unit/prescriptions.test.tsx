@@ -40,6 +40,7 @@ describe('prescription creation and issue', () => {
     await userEvent.type(screen.getByLabelText(/^Dose/), '2 tablets');
     await userEvent.type(screen.getByLabelText(/^Frequency/), 'Twice daily');
     await userEvent.type(screen.getByLabelText(/Instructions \(Marathi\)/), 'जेवणानंतर');
+    await userEvent.type(screen.getByLabelText(/Consultation fee/), '600');
     await userEvent.click(screen.getByRole('button', { name: 'Issue prescription' }));
 
     const dialog = await screen.findByRole('dialog');
@@ -51,7 +52,7 @@ describe('prescription creation and issue', () => {
     await waitFor(() => expect(api.issuePrescription).toHaveBeenCalledWith('rx-1', true));
     const [input, items] = api.savePrescriptionDraft.mock.calls[0]!;
     // The patient prefers Marathi, so the prescription defaults to Marathi; it is filed at the current branch.
-    expect(input).toMatchObject({ patient_id: fixturePatient.id, header: { language: 'mr', branch_id: 'b-main' } });
+    expect(input).toMatchObject({ patient_id: fixturePatient.id, header: { language: 'mr', branch_id: 'b-main', consultation_fee_paise: 60000 } });
     expect(items).toEqual([expect.objectContaining({ medicine_name: 'Yogaraj Guggulu', dose: '2 tablets', instructions_mr: 'जेवणानंतर', instructions_en: null })]);
   });
 

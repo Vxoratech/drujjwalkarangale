@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { optionalNumber, optionalText } from '@/lib/validation/schemas';
+import { paiseToRupees } from '@/lib/formatters';
+import { optionalNumber, optionalRupees, optionalText } from '@/lib/validation/schemas';
 import { AGNIS, AMA_LEVELS, BALAS, DOSHAS, KOSHTHAS, PRAKRITIS, type AyurvedicExamination, type Consultation } from '@/types/domain';
 import type { ConsultationInput, ExaminationInput } from '@/services/clinical';
 
@@ -29,6 +30,7 @@ export const consultationSchema = z
     pathya: optionalText(2000),
     apathya: optionalText(2000),
     follow_up_date: z.string().optional().or(z.literal('')),
+    consultation_fee: optionalRupees(),
     exam: z.object({
       prakriti: optionalEnum(PRAKRITIS),
       vikriti: z.array(z.enum(DOSHAS)),
@@ -79,8 +81,16 @@ export type ConsultationFormValues = z.output<typeof consultationSchema>;
 
 const str = (v: string | number | null | undefined) => (v === null || v === undefined ? '' : String(v));
 
-export function toConsultationForm(c?: Consultation | null, e?: AyurvedicExamination | null, patientPrakriti?: string | null): ConsultationFormInput {
+/** A new consultation starts with the clinic's default fee. */
+export function toConsultationForm(
+  c?: Consultation | null,
+  e?: AyurvedicExamination | null,
+  patientPrakriti?: string | null,
+  defaultFeePaise?: number | null,
+): ConsultationFormInput {
+  const fee = c ? c.consultation_fee_paise : defaultFeePaise;
   return {
+    consultation_fee: fee ? String(paiseToRupees(fee)) : '',
     chief_complaint: c?.chief_complaint ?? '',
     pain_details: c?.pain_details ?? '',
     doctor_notes: c?.doctor_notes ?? '',
@@ -170,6 +180,7 @@ export function toConsultationPayload(
       pathya: nul(v.pathya),
       apathya: nul(v.apathya),
       follow_up_date: nul(v.follow_up_date),
+      consultation_fee_paise: v.consultation_fee,
     },
     exam: {
       prakriti: nul(v.exam.prakriti),

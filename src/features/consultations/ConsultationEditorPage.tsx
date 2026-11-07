@@ -1,12 +1,12 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, Info, Lock, Pill, Plus, Save } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Alert, ErrorState, FullPageSpinner, PermissionDenied } from '@/components/feedback/States';
 import { notify } from '@/components/feedback/toast';
-import { FormField, FormGrid, FormSection } from '@/components/forms/FormField';
+import { FormField, FormGrid, FormSection, useFieldControl } from '@/components/forms/FormField';
 import { PatientIdentity } from '@/components/data-display/Avatar';
 import { Badge, StatusBadge } from '@/components/ui/Badge';
 import { Button, buttonClasses } from '@/components/ui/Button';
@@ -21,7 +21,7 @@ import { InvestigationsPanel } from '@/features/investigations/InvestigationsPan
 import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { cn } from '@/lib/cn';
 import { isPermissionError, toUserMessage } from '@/lib/errors';
-import { ageLabel, formatDate, formatDateTime, fullName, todayISO } from '@/lib/formatters';
+import { ageLabel, formatDate, formatDateTime, formatINR, fullName, rupeesToPaise, todayISO } from '@/lib/formatters';
 import { qk } from '@/lib/query/keys';
 import { useFieldError } from '@/lib/validation/useFieldError';
 import { useI18n, type TranslationKey } from '@/locales/i18n';
@@ -81,6 +81,16 @@ function RxPanel({ consultationId, patientId, canWrite }: { consultationId: stri
         )}
       </CardBody>
     </Card>
+  );
+}
+
+/** Read-only BMI, labelled by its FormField. */
+function BmiOutput({ value }: { value: number | null }) {
+  const field = useFieldControl();
+  return (
+    <output id={field.id} className="tabular flex h-10 items-center rounded-md bg-ivory px-3 text-sm" aria-live="polite">
+      {value ?? '—'}
+    </output>
   );
 }
 
@@ -208,6 +218,18 @@ export function ConsultationEditorPage() {
   const fieldError = useFieldError();
   const [confirmFinalize, setConfirmFinalize] = useState(false);
   const [chosenBranch, setChosenBranch] = useState(defaultBranchId ?? '');
+  // Height of the sticky header, so the side column can stick just below it.
+  const [headerEl, setHeaderEl] = useState<HTMLDivElement | null>(null);
+  const [headerHeight, setHeaderHeight] = useState(0);
+  useEffect(() => {
+    if (!headerEl) return;
+    const update = () => setHeaderHeight(headerEl.getBoundingClientRect().height);
+    update();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(update);
+    observer.observe(headerEl);
+    return () => observer.disconnect();
+  }, [headerEl]);
   const show = (section: ConsultationSection) => settings.preferences.consultation_sections?.[section] !== false;
   const examFields = useQuery({ queryKey: ['exam-fields'], queryFn: () => listExamFields(), staleTime: 5 * 60_000 });
 
@@ -229,7 +251,7 @@ export function ConsultationEditorPage() {
   // The visit belongs to the appointment's branch, else the branch chosen here.
   const branchId = c?.branch_id ?? appointment.data?.branch_id ?? chosenBranch;
 
-  const form = useForm<ConsultationFormInput, unknown, ConsultationFormValues>({ resolver: zodResolver(consultationSchema), defaultValues: toConsultationForm() });
+  const form = useForm<ConsultationFormInput, unknown, ConsultationFormValues>({ resolver: zodResolver(consultationSchema), defaultValues: toConsultationForm(null, null, null, settings.consultation_fee_paise) });
   const { register, control, formState, reset } = form;
   const e = formState.errors;
 
@@ -237,13 +259,18 @@ export function ConsultationEditorPage() {
     if (consultationId && bundle.data) reset(toConsultationForm(bundle.data.consultation, bundle.data.examination));
     // Prefill a new consultation only while it is untouched, so late-arriving
     // patient or appointment data never wipes what the doctor has typed.
-    else if (!consultationId && patient.data && JSON.stringify(form.getValues()) === JSON.stringify(toConsultationForm())) reset({ ...toConsultationForm(null, null, medical.data?.prakriti ?? null), chief_complaint: appointment.data?.reason ?? '' });
-  }, [consultationId, bundle.data, patient.data, appointment.data, medical.data, reset, form]);
+    else if (!consultationId && patient.data && JSON.stringify(form.getValues()) === JSON.stringify(toConsultationForm(null, null, null, settings.consultation_fee_paise)))
+      reset({ ...toConsultationForm(null, null, medical.data?.prakriti ?? null, settings.consultation_fee_paise), chief_complaint: appointment.data?.reason ?? '' });
+  }, [consultationId, bundle.data, patient.data, appointment.data, medical.data, reset, form, settings.consultation_fee_paise]);
 
   useUnsavedChangesGuard(formState.isDirty && !readOnly && !formState.isSubmitting, t('consultations.unsaved'));
 
   const [weight, height] = useWatch({ control, name: ['weight_kg', 'height_cm'] });
   const bmi = useMemo(() => computeBmi(Number(weight) || null, Number(height) || null), [weight, height]);
+  // The fee as typed (draft) or as recorded (finalized), for the header badge and finalize prompt.
+  const feeText = useWatch({ control, name: 'consultation_fee' });
+  const typedFee = feeText?.trim() ? rupeesToPaise(feeText) : 0;
+  const fee = readOnly ? c?.consultation_fee_paise ?? 0 : Number.isFinite(typedFee) && typedFee > 0 ? typedFee : 0;
 
   const save = useMutation({
     mutationFn: async ({ values, finalize }: { values: ConsultationFormValues; finalize: boolean }) => {
@@ -280,8 +307,11 @@ export function ConsultationEditorPage() {
   const choice = <T extends string>(values: readonly T[], prefix: string) => values.map((v) => ({ value: v, label: t(`${prefix}.${v}` as TranslationKey) }));
 
   return (
-    <>
+    <div style={{ '--editor-header': `${headerHeight}px` } as CSSProperties}>
+      {/* The title, patient and Save/Finalize stay in view while the record scrolls. */}
+      <div ref={setHeaderEl} className="sticky top-[var(--layout-header)] z-dropdown -mt-2 mb-6 border-b border-line bg-ivory/95 pb-3 pt-2 backdrop-blur supports-[backdrop-filter]:bg-ivory/85">
       <PageHeader
+        className="mb-0"
         breadcrumbs={[{ label: t('nav.patients'), to: '/patients' }, { label: fullName(p), to: `/patients/${p.id}` }, { label: consultationId ? formatDate(c?.visit_date) : t('consultations.new') }]}
         title={consultationId ? t('consultations.title') : t('consultations.new')}
         meta={
@@ -290,6 +320,7 @@ export function ConsultationEditorPage() {
             {c && <StatusBadge status={c.status} label={c.status === 'draft' ? t('consultations.draft') : t('consultations.final')} />}
             {c && (amendmentCount.data ?? 0) > 0 && <Badge tone="gold">{t('consultations.amended')}</Badge>}
             {branches.length > 1 && (c || appointment.data) && <Badge>{branchName(branchId)}</Badge>}
+            {fee > 0 && <Badge tone="gold">{t('consultations.feeBadge', { amount: formatINR(fee, { whole: true }) })}</Badge>}
           </>
         }
         actions={
@@ -305,6 +336,7 @@ export function ConsultationEditorPage() {
           )
         }
       />
+      </div>
 
       {!consultationId && !appointmentId && branches.length > 1 && !readOnly && (
         <div className="mb-4 max-w-xs">
@@ -413,10 +445,10 @@ export function ConsultationEditorPage() {
                     <FormField label={tb('consultations.pulse')} error={fieldError(e.pulse_bpm)}>
                       <Input inputMode="numeric" className="tabular" {...register('pulse_bpm')} />
                     </FormField>
-                    <FormField label={`${t('consultations.bp')} — ${t('consultations.systolic')}`} error={fieldError(e.bp_systolic)}>
+                    <FormField label={tb('consultations.bpSystolic')} error={fieldError(e.bp_systolic)}>
                       <Input inputMode="numeric" className="tabular" {...register('bp_systolic')} />
                     </FormField>
-                    <FormField label={`${t('consultations.bp')} — ${t('consultations.diastolic')}`} error={fieldError(e.bp_diastolic)}>
+                    <FormField label={tb('consultations.bpDiastolic')} error={fieldError(e.bp_diastolic)}>
                       <Input inputMode="numeric" className="tabular" {...register('bp_diastolic')} />
                     </FormField>
                     <FormField label={tb('consultations.temperature')} error={fieldError(e.temperature_c)}>
@@ -431,12 +463,9 @@ export function ConsultationEditorPage() {
                     <FormField label={tb('consultations.spo2')} error={fieldError(e.spo2_percent)}>
                       <Input inputMode="numeric" className="tabular" {...register('spo2_percent')} />
                     </FormField>
-                    <div className="flex flex-col gap-1.5">
-                      <span className="text-sm font-medium text-ink">{t('consultations.bmi')}</span>
-                      <output className="tabular flex h-10 items-center rounded-md bg-ivory px-3 text-sm" aria-live="polite">
-                        {bmi ?? '—'}
-                      </output>
-                    </div>
+                    <FormField label={t('consultations.bmi')}>
+                      <BmiOutput value={bmi} />
+                    </FormField>
                   </FormGrid>
                 </FormSection>
               </CardBody>
@@ -457,8 +486,7 @@ export function ConsultationEditorPage() {
                     control={control}
                     name="exam.vikriti"
                     render={({ field }) => (
-                      <fieldset>
-                        <legend className="mb-1.5 text-sm font-medium">{t('exam.vikriti')}</legend>
+                      <FormField label={tb('exam.vikriti')} group>
                         <div className="flex flex-wrap gap-2">
                           {DOSHAS.map((d) => {
                             const checked = field.value.includes(d);
@@ -475,7 +503,7 @@ export function ConsultationEditorPage() {
                             );
                           })}
                         </div>
-                      </fieldset>
+                      </FormField>
                     )}
                   />
                 </FormGrid>
@@ -615,11 +643,26 @@ export function ConsultationEditorPage() {
                       <Textarea rows={3} {...register('apathya')} />
                     </FormField>
                   </FormGrid>
-                  <div className="max-w-xs">
+                  <FormGrid>
                     <FormField label={tb('consultations.followUp')} error={fieldError(e.follow_up_date)}>
                       <DateInput min={c?.visit_date ?? todayISO()} {...register('follow_up_date')} />
                     </FormField>
-                  </div>
+                    <FormField
+                      label={t('consultations.fee')}
+                      hint={
+                        c?.invoice_id && can('billing.view') ? (
+                          <Link to={`/billing/${c.invoice_id}`} className="text-forest hover:underline">
+                            {t('consultations.viewInvoice')}
+                          </Link>
+                        ) : readOnly ? undefined : (
+                          t('consultations.feeHint')
+                        )
+                      }
+                      error={fieldError(e.consultation_fee)}
+                    >
+                      <Input inputMode="decimal" className="tabular" placeholder="0" {...register('consultation_fee')} />
+                    </FormField>
+                  </FormGrid>
                 </FormSection>
                 <FormSection title={tb('history.doctorNotes')} description={t('history.doctorNotesHint')}>
                   <FormField label={tb('history.doctorNotes')} hideLabel error={fieldError(e.doctor_notes)}>
@@ -632,7 +675,8 @@ export function ConsultationEditorPage() {
           </fieldset>
         </form>
 
-        <aside className="space-y-4">
+        {/* Previous visits and the side panels stay beside the form and scroll on their own. */}
+        <aside className="space-y-4 xl:sticky xl:top-[calc(var(--layout-header)+var(--editor-header)+1.5rem)] xl:max-h-[calc(100dvh-var(--layout-header)-var(--editor-header)-3rem)] xl:self-start xl:overflow-y-auto xl:pr-1">
           {c?.status === 'finalized' && <AmendmentsPanel consultationId={c.id} canAmend={can('consultations.edit')} />}
           <PreviousVisits patientId={p.id} excludeId={consultationId} />
           {consultationId ? (
@@ -661,11 +705,16 @@ export function ConsultationEditorPage() {
         open={confirmFinalize}
         onOpenChange={setConfirmFinalize}
         title={t('consultations.finalizeConfirmTitle')}
-        body={t('consultations.finalizeConfirmBody')}
+        body={
+          <>
+            <p>{t('consultations.finalizeConfirmBody')}</p>
+            <p className="mt-2 font-medium text-ink">{fee > 0 ? t('consultations.finalizeBilled', { amount: formatINR(fee) }) : t('consultations.finalizeFree')}</p>
+          </>
+        }
         confirmLabel={t('consultations.finalize')}
         cancelLabel={t('common.cancel')}
         onConfirm={() => submit(true)()}
       />
-    </>
+    </div>
   );
 }

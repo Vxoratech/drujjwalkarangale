@@ -5,7 +5,9 @@ import { cn } from '@/lib/cn';
 import { useI18n } from '@/locales/i18n';
 import { Button } from './Button';
 
-const overlay = 'fixed inset-0 z-modal bg-forest-deep/40 data-[state=open]:animate-[fade-in_150ms_ease-out]';
+// Each dialog passes its own z-index: two z-* classes on one element let the
+// stylesheet order decide, which once put a drawer's backdrop above its panel.
+const overlay = 'fixed inset-0 bg-forest-deep/40 data-[state=open]:animate-[fade-in_150ms_ease-out]';
 
 export interface ModalProps {
   open: boolean;
@@ -25,7 +27,7 @@ export function Modal({ open, onOpenChange, title, description, children, footer
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
       <RadixDialog.Portal>
-        <RadixDialog.Overlay className={overlay} />
+        <RadixDialog.Overlay className={cn(overlay, 'z-modal')} />
         <RadixDialog.Content
           className={cn(
             'fixed left-1/2 top-1/2 z-modal flex max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col',

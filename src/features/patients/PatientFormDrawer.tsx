@@ -2,7 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Copy, UserPlus } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Controller, useForm } from 'react-hook-form';
+import { Controller, useForm, useWatch } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
 import { Alert } from '@/components/feedback/States';
 import { notify } from '@/components/feedback/toast';
@@ -14,7 +14,7 @@ import { Drawer } from '@/components/ui/Dialog';
 import { DateInput, Input, RadioGroup, Select } from '@/components/ui/Input';
 import { PatientIdentity } from '@/components/data-display/Avatar';
 import { useAccess } from '@/features/access/AccessProvider';
-import { formatDate, fullName, todayISO } from '@/lib/formatters';
+import { ageFromDob, formatDate, fullName, todayISO } from '@/lib/formatters';
 import { qk } from '@/lib/query/keys';
 import { useFieldError } from '@/lib/validation/useFieldError';
 import { useI18n } from '@/locales/i18n';
@@ -50,6 +50,9 @@ export function PatientFormDrawer({ open, onOpenChange, patient, onSaved }: Pati
   const form = useForm<PatientFormInput, unknown, PatientFormValues>({ resolver: zodResolver(patientSchema), defaultValues: toFormValues(patient) });
   const { register, control, formState, reset } = form;
   const e = formState.errors;
+  // A valid date of birth fills in the age automatically (shown, not stored).
+  const dob = useWatch({ control, name: 'date_of_birth' });
+  const dobAge = dob && /^\d{4}-\d{2}-\d{2}$/.test(dob) && dob <= todayISO() ? ageFromDob(dob) : null;
 
   useEffect(() => {
     if (open) {
@@ -182,9 +185,15 @@ export function PatientFormDrawer({ open, onOpenChange, patient, onSaved }: Pati
               <FormField label={t('patients.dob')} error={fieldError(e.date_of_birth)}>
                 <DateInput max={todayISO()} disabled={identityLocked} {...register('date_of_birth')} />
               </FormField>
-              <FormField label={t('patients.approxAge')} hint={t('patients.approxAgeHint')} error={fieldError(e.approx_age_years)}>
-                <Input inputMode="numeric" className="tabular" disabled={identityLocked} {...register('approx_age_years')} />
-              </FormField>
+              {dobAge !== null ? (
+                <FormField label={t('patients.age')} hint={t('patients.ageFromDob')}>
+                  <Input className="tabular" value={t('patients.ageYears', { count: dobAge })} readOnly aria-readonly="true" tabIndex={-1} />
+                </FormField>
+              ) : (
+                <FormField label={t('patients.approxAge')} hint={t('patients.approxAgeHint')} error={fieldError(e.approx_age_years)}>
+                  <Input inputMode="numeric" className="tabular" disabled={identityLocked} {...register('approx_age_years')} />
+                </FormField>
+              )}
               <FormField label={t('patients.occupation')} error={fieldError(e.occupation)}>
                 <Input autoComplete="off" disabled={identityLocked} {...register('occupation')} />
               </FormField>

@@ -9,8 +9,6 @@ import { describe, expect, it } from 'vitest';
  */
 const ROOTS = ['src/components', 'src/app/layouts'];
 const ALLOWED = [
-  // Registered brand name, intentionally untranslated.
-  /^Vaidyora$/,
   // Language names shown in their own script.
   /^English$/,
 ];

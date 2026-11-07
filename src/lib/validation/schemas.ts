@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { rupeesToPaise } from '@/lib/formatters';
 
 /** Indian mobile/landline — mirrors the DB check `^\+?[0-9 -]{7,20}$`. */
 export const phoneRegex = /^\+?[0-9 -]{7,20}$/;
@@ -14,6 +15,14 @@ export const optionalNumber = (min: number, max: number) =>
     .union([z.string(), z.number()])
     .transform((v) => (v === '' || v === null ? null : Number(v)))
     .refine((v) => v === null || (Number.isFinite(v) && v >= min && v <= max), { message: `range:${min}:${max}` });
+
+/** Rupee amount that may be blank (e.g. "1,250.50"). Produces paise | null. */
+export const optionalRupees = (maxRupees = 100_000) =>
+  z
+    .string()
+    .trim()
+    .transform((v) => (v === '' ? null : rupeesToPaise(v)))
+    .refine((v) => v === null || (Number.isFinite(v) && v >= 0 && v <= maxRupees * 100), { message: `range:0:${maxRupees}` });
 
 export const passwordSchema = z
   .string()

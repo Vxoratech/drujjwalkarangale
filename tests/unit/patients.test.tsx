@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PatientFormDrawer } from '@/features/patients/PatientFormDrawer';
@@ -56,6 +56,23 @@ describe('patient registration', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Register as new patient' }));
     await waitFor(() => expect(patients.registerPatient).toHaveBeenCalledTimes(1));
     expect(patients.registerPatient.mock.calls[0]![2]).toBe(true);
+  });
+
+  it('fills in the age from the date of birth and stores only the date', async () => {
+    patients.findPossibleDuplicates.mockResolvedValue([]);
+    patients.registerPatient.mockResolvedValue({ id: 'p1', first_name: 'Asha' });
+    renderRoute(<PatientFormDrawer open onOpenChange={() => undefined} />, { permissions: RECEPTIONIST_PERMISSIONS, account: 'staff' });
+    await userEvent.type(await screen.findByLabelText(/First name/), 'Asha');
+    await userEvent.type(screen.getByLabelText(/Approximate age/), '41');
+    fireEvent.change(screen.getByLabelText(/Date of birth/), { target: { value: '1985-04-12' } });
+    const age = await screen.findByLabelText(/^Age/);
+    expect(age).toHaveAttribute('readonly');
+    expect((age as HTMLInputElement).value).toMatch(/^\d+ years$/);
+    expect(screen.queryByLabelText(/Approximate age/)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Register patient' }));
+    await waitFor(() => expect(patients.registerPatient).toHaveBeenCalledTimes(1));
+    expect(patients.registerPatient.mock.calls[0]![0]).toMatchObject({ date_of_birth: '1985-04-12', approx_age_years: null });
+    expect(screen.queryByText('Use either a date of birth or an approximate age.')).not.toBeInTheDocument();
   });
 
   it('locks identity fields for staff who may edit contact details only', async () => {

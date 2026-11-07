@@ -43,11 +43,12 @@ export interface PageHeaderProps {
   breadcrumbs?: Crumb[];
   actions?: ReactNode;
   meta?: ReactNode;
+  className?: string;
 }
 
-export function PageHeader({ title, description, breadcrumbs, actions, meta }: PageHeaderProps) {
+export function PageHeader({ title, description, breadcrumbs, actions, meta, className }: PageHeaderProps) {
   return (
-    <header className="mb-6 space-y-2">
+    <header className={cn('mb-6 space-y-2', className)}>
       {breadcrumbs && <Breadcrumb items={breadcrumbs} />}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="min-w-0">

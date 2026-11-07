@@ -84,6 +84,8 @@ export const fixtureConsultation: Consultation = {
   pathya: 'Warm, freshly cooked food; sesame oil; gentle walking',
   apathya: 'Cold food, curd at night, prolonged fasting',
   follow_up_date: '2026-11-21',
+  consultation_fee_paise: 50000,
+  invoice_id: null,
   finalized_at: '2026-10-22T06:00:00Z',
   created_at: '2026-10-22T05:00:00Z',
 };
@@ -118,6 +120,8 @@ export function fixturePrescription(language: 'en' | 'mr' = 'mr', count = medici
     language,
     patient_instructions: 'थंड पेये टाळा. रोज सकाळी हलके चालणे. Avoid cold drinks; walk gently every morning.',
     follow_up_date: '2026-11-21',
+    consultation_fee_paise: null, // billed with the consultation
+    invoice_id: null,
     revision_number: 2,
     revision_reason: 'Dose adjusted',
     issued_at: '2026-10-22T06:10:00Z',
