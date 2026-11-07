@@ -2,7 +2,11 @@ import { fileURLToPath, URL } from 'node:url';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
+// Build for a subfolder with VITE_BASE_PATH=/drujjwal/ (default: site root).
+const base = `/${(process.env.VITE_BASE_PATH ?? '/').replace(/^\/+|\/+$/g, '')}/`.replace(/^\/\/$/, '/');
+
 export default defineConfig({
+  base,
   plugins: [react()],
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },

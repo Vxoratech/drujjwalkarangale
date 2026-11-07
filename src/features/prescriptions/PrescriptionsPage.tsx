@@ -15,6 +15,7 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { formatDate, fullName, istDayRange } from '@/lib/formatters';
 import { useI18n } from '@/locales/i18n';
 import { searchPrescriptions, type PrescriptionListItem, type PrescriptionSearchParams } from '@/services/clinical';
+import { appPath } from '@/lib/basePath';
 
 const PAGE_SIZE = 20;
 
@@ -74,7 +75,7 @@ export function PrescriptionsPage() {
       align: 'right',
       cell: (rx) =>
         rx.status === 'issued' && (
-          <IconButton size="sm" label={`${t('common.print')} ${rx.prescription_no}`} icon={<Printer />} onClick={(e) => { e.stopPropagation(); window.open(`/print/prescriptions/${rx.id}`, '_blank', 'noopener'); }} />
+          <IconButton size="sm" label={`${t('common.print')} ${rx.prescription_no}`} icon={<Printer />} onClick={(e) => { e.stopPropagation(); window.open(appPath(`/print/prescriptions/${rx.id}`), '_blank', 'noopener'); }} />
         ),
     },
   ];

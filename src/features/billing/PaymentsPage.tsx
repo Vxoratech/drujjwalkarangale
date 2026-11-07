@@ -19,6 +19,7 @@ import { useI18n } from '@/locales/i18n';
 import { listPayments, reconcilePayment, type PaymentListParams } from '@/services/billing';
 import { PAYMENT_METHODS, type PaymentMethod, type PaymentWithContext } from '@/types/domain';
 import { BillingTabs } from './BillingTabs';
+import { appPath } from '@/lib/basePath';
 
 const PAGE_SIZE = 25;
 
@@ -139,7 +140,7 @@ export function PaymentsPage() {
             <IconButton size="sm" label={`${t('common.actions')}: ${p.receipt_no ?? ''}`} icon={<MoreHorizontal />} />
           </DropdownMenuTrigger>
           <DropdownMenuContent>
-            <DropdownMenuItem icon={<Printer />} onSelect={() => window.open(`/print/receipts/${p.id}`, '_blank', 'noopener')}>
+            <DropdownMenuItem icon={<Printer />} onSelect={() => window.open(appPath(`/print/receipts/${p.id}`), '_blank', 'noopener')}>
               {t('billing.printReceipt')}
             </DropdownMenuItem>
             {canReconcile && !p.reconciled_at && (

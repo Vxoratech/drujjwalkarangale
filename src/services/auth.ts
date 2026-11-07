@@ -1,4 +1,5 @@
 import { getSupabase } from '@/lib/supabase/client';
+import { appPath } from '@/lib/basePath';
 
 export async function signIn(email: string, password: string): Promise<void> {
   const { error } = await getSupabase().auth.signInWithPassword({ email, password });
@@ -51,7 +52,7 @@ export function markSessionExpired(): void {
 
 export async function requestPasswordReset(email: string): Promise<void> {
   const { error } = await getSupabase().auth.resetPasswordForEmail(email, {
-    redirectTo: `${window.location.origin}/auth/set-password`,
+    redirectTo: `${window.location.origin}${appPath('/auth/set-password')}`,
   });
   // Do not reveal whether the account exists.
   if (error && error.status !== 400) throw error;

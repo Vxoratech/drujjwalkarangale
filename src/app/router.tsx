@@ -1,4 +1,5 @@
 import { lazy, Suspense, type ComponentType, type ReactNode } from 'react';
+import { BASE_PATH } from '@/lib/basePath';
 import { createBrowserRouter, Navigate, Outlet, useLocation, type RouteObject } from 'react-router-dom';
 import { ErrorState, FullPageSpinner } from '@/components/feedback/States';
 import { useAuth } from '@/features/auth/AuthProvider';
@@ -144,5 +145,5 @@ export const routes: RouteObject[] = [
 ];
 
 export function createAppRouter() {
-  return createBrowserRouter(routes);
+  return createBrowserRouter(routes, { basename: BASE_PATH || '/' });
 }

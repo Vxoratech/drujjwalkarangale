@@ -21,7 +21,11 @@
         "4173",
         "--strictPort"
       ],
-      "port": 4173
+      "port": 4173,
+      "env": {
+        "VITE_BASE_PATH": "/drujjwal/"
+      },
+      "url": "http://localhost:4173"
     }
   ]
 }
